@@ -1,0 +1,123 @@
+{% extends 'base.html' %}
+{% block title %}Inventory — {{ block.super }}{% endblock %}
+{% block page_title %}Inventory{% endblock %}
+{% block content %}
+{% if request.user.is_manager %}
+<div class="flex justify-end mb-4 space-x-3">
+  <a href="{% url 'inventory:receive_products' %}" class="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white text-sm font-medium rounded-lg transition">
+    <i class="fas fa-truck-loading mr-1"></i> Receive Products
+  </a>
+  <a href="{% url 'inventory:repack' %}" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-lg transition">
+    <i class="fas fa-cut mr-1"></i> Repack
+  </a>
+  <a href="{% url 'inventory:bundle_list' %}" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition">
+    <i class="fas fa-cubes mr-1"></i> Bundle Products
+  </a>
+  <a href="{% url 'inventory:category_list' %}" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition">
+    <i class="fas fa-tag mr-1"></i> Manage Categories
+  </a>
+  <a href="{% url 'inventory:bulk_product_upload' %}" class="px-4 py-2 bg-gray-700 hover:bg-gray-800 text-white text-sm font-medium rounded-lg transition">
+    <i class="fas fa-file-csv mr-1"></i> Import Products CSV
+  </a>
+</div>
+{% endif %}
+<div class="mb-4 bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+  <form id="filter-form" class="flex flex-wrap items-end gap-3">
+    <div>
+      <label class="block text-xs font-medium text-gray-600 mb-1">Search</label>
+      <input type="text" name="q" value="{{ current_q }}" placeholder="Name or SKU..."
+             class="w-48 bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+             hx-get="{% url 'inventory:product_table' %}"
+             hx-target="#product-table"
+             hx-include="#filter-form"
+             hx-trigger="keyup changed delay:300ms, search"
+             hx-push-url="true"
+             hx-indicator="#table-spinner">
+    </div>
+    <div>
+      <label class="block text-xs font-medium text-gray-600 mb-1">Vendor</label>
+      <select name="vendor"
+              class="bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              hx-get="{% url 'inventory:product_table' %}"
+              hx-target="#product-table"
+              hx-include="#filter-form"
+              hx-trigger="change"
+              hx-push-url="true"
+              hx-indicator="#table-spinner">
+        <option value="">All Vendors</option>
+        {% for v in vendor_list %}
+        <option value="{{ v.id }}" {% if current_vendor|stringformat:'s' == v.id|stringformat:'s' %}selected{% endif %}>{{ v.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="block text-xs font-medium text-gray-600 mb-1">Category</label>
+      <select name="category"
+              class="bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              hx-get="{% url 'inventory:product_table' %}"
+              hx-target="#product-table"
+              hx-include="#filter-form"
+              hx-trigger="change"
+              hx-push-url="true"
+              hx-indicator="#table-spinner">
+        <option value="">All Categories</option>
+        {% for c in category_list %}
+        <option value="{{ c.id }}" {% if current_category|stringformat:'s' == c.id|stringformat:'s' %}selected{% endif %}>{{ c.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="flex items-end pb-1.5">
+      <label class="inline-flex items-center gap-1.5 text-sm text-gray-600 cursor-pointer">
+        <input type="checkbox" name="low_stock" value="1"
+               {% if current_low_stock %}checked{% endif %}
+               hx-get="{% url 'inventory:product_table' %}"
+               hx-target="#product-table"
+               hx-include="#filter-form"
+               hx-trigger="change"
+               hx-push-url="true"
+               hx-indicator="#table-spinner"
+               class="rounded border-gray-300 text-red-500 focus:ring-red-400">
+        <i class="fas fa-exclamation-triangle text-red-500 text-xs"></i> Low stock only
+      </label>
+      <span id="table-spinner" class="htmx-indicator"><i class="fas fa-spinner fa-spin text-blue-600"></i></span>
+      <a href="{% url 'inventory:product_list' %}" class="ml-2 px-3 py-2 text-sm font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 hover:text-gray-800 rounded-lg transition" title="Reset filters">
+        <i class="fas fa-undo"></i>
+      </a>
+    </div>
+  </form>
+</div>
+
+<div class="grid grid-cols-1 xl:grid-cols-3 gap-6 mb-6">
+  <div class="xl:col-span-2 bg-white rounded-xl shadow-sm border border-gray-200" id="product-table">
+    {% include 'inventory/partials/product_table.html' %}
+  </div>
+  <div class="bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col">
+    <div class="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
+      <h2 class="font-semibold text-gray-800"><i class="fas fa-exclamation-triangle mr-2 text-yellow-500"></i>Low Stock</h2>
+      <button class="text-xs text-blue-600 hover:text-blue-800 font-medium"
+              hx-get="{% url 'inventory:low_stock' %}"
+              hx-target="#low-stock-panel">Refresh</button>
+    </div>
+    <div id="low-stock-panel" hx-get="{% url 'inventory:low_stock' %}" hx-trigger="load" class="divide-y divide-gray-100 flex-1 min-h-0 overflow-y-auto">
+      <div class="p-4 text-center text-gray-400 text-sm"><i class="fas fa-spinner fa-spin mr-2"></i>Loading...</div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+function deleteProductModal() {
+    return {
+        showModal: false,
+        productName: '',
+        confirmDelete(name) {
+            this.productName = name;
+            this.showModal = true;
+        },
+        submitDelete() {
+            this.$refs.deleteForm.submit();
+        },
+    };
+}
+</script>
+{% endblock %}

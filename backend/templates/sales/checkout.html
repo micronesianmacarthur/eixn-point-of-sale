@@ -1,0 +1,262 @@
+{% extends 'base.html' %}
+{% load pos_extras %}
+{% block title %}Sales — {{ block.super }}{% endblock %}
+{% block page_title %}{% if return_txn_id %}Return #{{ return_txn_id }}{% else %}New Sale{% endif %}{% endblock %}
+{% block content %}
+
+{% if not active_session %}
+<div class="bg-yellow-100 border border-yellow-200 text-yellow-700 px-4 py-3 rounded-lg mb-6 flex items-center justify-between">
+  <span><i class="fas fa-exclamation-triangle mr-2"></i>No active register session.</span>
+  <a href="{% url 'sales:sale_list' %}" class="text-sm font-medium text-yellow-800 underline">Open one now</a>
+</div>
+{% else %}
+<div x-data="posCart()" class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+  {% if return_txn_id %}
+  {{ return_items|json_script:'return-items-data' }}
+  <input type="hidden" id="return-txn-id" value="{{ return_txn_id }}">
+  <input type="hidden" id="return-customer-id" value="{{ return_customer_id }}">
+  <input type="hidden" id="return-payment-type" value="{{ return_payment_type }}">
+  {% endif %}
+  <div x-show="isReturn" class="col-span-full bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-lg flex items-center">
+    <i class="fas fa-undo mr-2"></i>
+    <span>Processing return for transaction #<strong x-text="returnTxnId"></strong></span>
+  </div>
+  <div class="lg:col-span-2">
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200">
+      <div class="p-4 border-b border-gray-200">
+        <div class="relative">
+          <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
+          <input type="text" id="product-search" name="q"
+                 class="w-full pl-10 pr-4 py-2.5 bg-white rounded-lg border border-gray-300 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                 placeholder="Search products by name or SKU..."
+                 hx-get="{% url 'sales:product_search' %}"
+                 hx-trigger="keyup changed delay:300ms"
+                 hx-target="#product-results"
+                 hx-indicator="#search-spinner">
+          <i id="search-spinner" class="fas fa-spinner fa-spin absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hidden htmx-indicator"></i>
+        </div>
+      </div>
+      <div id="product-results" class="divide-y divide-gray-100 max-h-96 overflow-y-auto">
+        <div class="px-4 py-6 text-center text-gray-400">Type to search products...</div>
+      </div>
+    </div>
+    {% include 'sales/partials/quick_service_grid.html' %}
+    {% include 'sales/partials/bundle_grid.html' %}
+  </div>
+
+  <div>
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200">
+      <div class="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
+        <h2 class="font-semibold text-gray-800"><i class="fas fa-shopping-cart mr-2"></i>Cart</h2>
+        <span class="text-xs text-gray-500">Session #{{ active_session.id }}</span>
+      </div>
+
+      <div id="cart-panel">
+        <template x-if="items.length === 0">
+          <div class="py-8 text-center text-gray-400">
+            <i class="fas fa-shopping-cart text-3xl mb-2"></i>
+            <p class="text-sm">Cart is empty</p>
+          </div>
+        </template>
+
+        <template x-if="items.length > 0">
+          <div>
+            <div class="space-y-3 p-4">
+              <template x-for="(item, index) in items" :key="item.product_id">
+                <div class="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2">
+                  <div class="flex-1 min-w-0">
+                    <div class="text-sm font-medium text-gray-800 truncate" x-text="item.product_name"></div>
+                    <div class="text-xs text-gray-500">
+                        <span x-show="item.bundle_id" class="text-indigo-500 font-medium mr-1">Bundle</span>
+                        <span x-text="'$' + item.price.toFixed(2) + ' ea'"></span>
+                    </div>
+                  </div>
+                  <div class="flex items-center space-x-2 ml-2">
+                    <button class="w-7 h-7 rounded bg-gray-200 hover:bg-gray-300 text-sm font-medium transition"
+                            @click="updateQuantity(item.product_id, item.quantity - 1)">&minus;</button>
+                    <span class="w-8 text-center text-sm font-medium" x-text="item.quantity"></span>
+                    <button class="w-7 h-7 rounded bg-gray-200 hover:bg-gray-300 text-sm font-medium transition"
+                            @click="updateQuantity(item.product_id, item.quantity + 1)">+</button>
+                  </div>
+                  <div class="text-sm font-semibold text-gray-800 ml-3 w-20 text-right" x-text="'$' + (item.price * item.quantity).toFixed(2)"></div>
+                  <button class="ml-2 text-red-400 hover:text-red-600 transition" @click="removeItem(item.product_id)">&times;</button>
+                </div>
+              </template>
+            </div>
+
+            <div class="px-4 py-3 border-t border-gray-200 bg-gray-50/50">
+              <div class="flex justify-between text-sm text-gray-600 mb-1">
+                <span x-text="'Items (' + itemCount + ' total)'"></span>
+                <span x-text="items.length + ' product' + (items.length === 1 ? '' : 's')"></span>
+              </div>
+              <div class="flex justify-between text-base font-semibold text-gray-800">
+                <span>Subtotal</span>
+                <span x-text="'$' + total.toFixed(2)"></span>
+              </div>
+            </div>
+
+            <div class="px-4 py-3 border-t border-gray-200">
+              <div class="space-y-3">
+                <div x-show="!isReturn">
+                  <label class="block text-xs font-medium text-gray-600 mb-1">Customer</label>
+                  <template x-if="!customerId">
+                    <button type="button" @click="showCustomerModal = true"
+                            class="w-full flex items-center justify-between bg-white rounded-lg border border-gray-300 px-3 py-2.5 text-sm text-gray-400 hover:text-gray-600 hover:border-gray-400 transition">
+                      <span><i class="fas fa-user mr-2"></i>Walk-in Customer</span>
+                      <i class="fas fa-chevron-down text-xs"></i>
+                    </button>
+                  </template>
+                  <template x-if="customerId">
+                    <div class="flex items-center justify-between bg-blue-50 rounded-lg border border-blue-200 px-3 py-2">
+                      <div class="flex items-center min-w-0">
+                        <i class="fas fa-user-check text-blue-600 mr-2"></i>
+                        <span class="text-sm font-medium text-blue-800 truncate" x-text="customerName"></span>
+                      </div>
+                      <button type="button" @click="clearCustomer()" class="ml-2 text-blue-400 hover:text-red-500 transition flex-shrink-0">
+                        <i class="fas fa-times"></i>
+                      </button>
+                    </div>
+                  </template>
+                </div>
+                <div x-show="!isReturn">
+                  <label class="block text-xs font-medium text-gray-600 mb-1">Payment Type</label>
+                  <select x-model="paymentType" class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          :class="{'border-red-500 ring-2 ring-red-200': creditError}">
+                    <option value="CASH">Cash</option>
+                    <option value="CARD">Card</option>
+                    <option value="STORE_CREDIT" x-show="customerId !== ''">Store Credit</option>
+                  </select>
+                  <div x-show="creditError" class="mt-1 flex items-center text-red-600 text-xs">
+                    <i class="fas fa-exclamation-circle mr-1"></i>
+                    <span x-text="creditError"></span>
+                  </div>
+                </div>
+                <div x-show="!isReturn && paymentType === 'CASH'">
+                  <label class="block text-xs font-medium text-gray-600 mb-1">Tendered Amount ($)</label>
+                  <button type="button" @click="cashBuffer = '0'; showCashModal = true"
+                          class="w-full flex items-center justify-between bg-white rounded-lg border border-gray-300 px-3 py-2.5 text-sm hover:border-gray-400 transition text-left"
+                          :class="{'border-red-500 ring-2 ring-red-200': tenderError}">
+                    <span x-show="!tendered" class="text-gray-400"><i class="fas fa-calculator mr-2"></i> Tap to enter amount</span>
+                    <span x-show="tendered" class="font-medium text-gray-800"><i class="fas fa-calculator mr-2"></i> $<span x-text="tendered.toFixed(2)"></span></span>
+                    <i class="fas fa-chevron-right text-xs text-gray-400"></i>
+                  </button>
+                  <div x-show="tenderError" class="mt-1 flex items-center text-red-600 text-xs">
+                    <i class="fas fa-exclamation-circle mr-1"></i>
+                    <span>Tender must be at least <strong x-text="'$' + total.toFixed(2)"></strong></span>
+                  </div>
+                </div>
+                <button type="button"
+                        @click="isReturn ? processRefund() : submitCheckout()"
+                        :class="isReturn ? 'bg-amber-600 hover:bg-amber-700' : 'bg-blue-600 hover:bg-blue-700'"
+                        class="w-full py-2.5 text-white font-medium rounded-lg transition text-sm">
+                  <i :class="isReturn ? 'fas fa-undo' : 'fas fa-check'" class="mr-1"></i>
+                  <span x-text="isReturn ? 'Process Refund' : 'Complete Sale'"></span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+  </div>
+
+  <div x-show="pendingWeightProduct" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm mx-4 p-6">
+      <h3 class="text-lg font-semibold text-gray-800 mb-2">Enter Weight</h3>
+      <p class="text-sm text-gray-600 mb-4" x-text="'Weight for ' + (pendingWeightProduct ? pendingWeightProduct.name : '')"></p>
+      <input type="number" x-model="weightInput" step="0.001" min="0.001"
+             class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 mb-4"
+             placeholder="Enter weight..." @keyup.enter="confirmWeight()">
+      <div class="flex justify-end space-x-3">
+        <button type="button" @click="cancelWeight()" class="px-4 py-2 text-sm text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition">Cancel</button>
+        <button type="button" @click="confirmWeight()" class="px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition">Add to Cart</button>
+      </div>
+    </div>
+  </div>
+
+  <div x-show="showCustomerModal" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4">
+      <div class="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
+        <h3 class="font-semibold text-gray-800">Select Customer</h3>
+        <button type="button" @click="showCustomerModal = false; customerSearch = ''" class="text-gray-400 hover:text-gray-600">&times;</button>
+      </div>
+      <div class="p-4 border-b border-gray-100">
+        <div class="relative">
+          <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
+          <input type="text" x-model="customerSearch"
+                 class="w-full pl-10 pr-4 py-2 bg-white rounded-lg border border-gray-300 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                 placeholder="Search by name or phone...">
+        </div>
+      </div>
+      <div class="max-h-64 overflow-y-auto">
+        <template x-for="c in filteredCustomers" :key="c.id">
+          <button type="button" @click="selectCustomer(c)"
+                  class="w-full text-left px-4 py-3 hover:bg-blue-50 border-b border-gray-50 transition flex items-center justify-between">
+            <div>
+              <div class="text-sm font-medium text-gray-800" x-text="c.name"></div>
+              <div class="text-xs text-gray-500" x-show="c.phone" x-text="c.phone"></div>
+            </div>
+            <i class="fas fa-chevron-right text-gray-300 text-xs"></i>
+          </button>
+        </template>
+        <div x-show="filteredCustomers.length === 0" class="px-4 py-8 text-center text-gray-400 text-sm">
+          No customers found.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {% include 'sales/partials/cash_modal.html' %}
+
+  <div x-show="showChangeModal" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-8 text-center">
+      <h2 class="text-lg font-semibold text-gray-800 mb-2">Give Change</h2>
+      <p class="text-sm text-gray-500 mb-4" x-text="'Total: $' + total.toFixed(2) + '  Tendered: $' + (parseFloat(tendered) || 0).toFixed(2)"></p>
+      <div class="text-6xl font-bold text-green-600 mb-6" x-text="'$' + changeAmount.toFixed(2)"></div>
+      <button type="button" @click="completeAfterChange()"
+              class="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl transition text-base">
+        Complete Transaction
+      </button>
+    </div>
+  </div>
+
+  {{ customers_json|json_script:'customers-data' }}
+  {{ bundles_json|json_script:'bundles-data' }}
+</div>
+
+<form id="alpine-checkout-form" method="post" action="{% url 'sales:checkout_complete' %}" class="hidden">
+  {% csrf_token %}
+  <input type="hidden" name="cart_json" id="cart-json-input" value="">
+  <input type="hidden" name="customer_id" id="customer-id-input" value="">
+  <input type="hidden" name="payment_type" id="payment-type-input" value="">
+  <input type="hidden" name="return_of" id="return-of-input" value="">
+</form>
+
+<script>
+  window.addEventListener('pos:checkout', function() {
+    document.getElementById('alpine-checkout-form').submit();
+  });
+</script>
+{% endif %}
+
+{% if not active_session %}
+<div id="sessionModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+  <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm mx-4">
+    <form method="post" action="{% url 'sales:session_create' %}">
+      {% csrf_token %}
+      <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+        <h3 class="text-lg font-semibold text-gray-800">Open Register Session</h3>
+        <a href="{% url 'sales:dashboard' %}" class="text-gray-400 hover:text-gray-600 transition text-2xl leading-none">&times;</a>
+      </div>
+      <div class="px-6 py-4">
+        <label class="block text-sm font-medium text-gray-700 mb-1">Starting Cash in Drawer ($)</label>
+        <input type="number" name="starting_cash" step="0.01" class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" value="0.00" autofocus required>
+      </div>
+      <div class="px-6 py-4 border-t border-gray-200 flex justify-end">
+        <button type="submit" class="px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition">Open Session</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

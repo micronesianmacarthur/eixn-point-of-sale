@@ -1,0 +1,197 @@
+{% extends 'base.html' %}
+{% block title %}PO-{{ po.id }} — {{ block.super }}{% endblock %}
+{% block page_title %}Purchase Order #PO-{{ po.id }}{% endblock %}
+{% block content %}
+<div class="space-y-6" x-data="{ tab: 'items' }">
+  <div class="flex items-center justify-between">
+    <a href="{% url 'inventory:purchase_order_list' %}" class="inline-flex items-center text-sm text-gray-500 hover:text-gray-700 transition">
+      <i class="fas fa-arrow-left mr-2"></i> Back to Purchase Orders
+    </a>
+    <div class="flex items-center space-x-3">
+      {% if request.user.is_manager and po.status == 'DRAFT' %}
+      <button onclick="document.getElementById('addItemModal').classList.remove('hidden')" class="inline-flex items-center px-3 py-1.5 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg transition">
+        <i class="fas fa-plus mr-1"></i> Add Product
+      </button>
+      <form method="post" action="{% url 'inventory:purchase_order_status' po.pk %}">
+        {% csrf_token %}
+        <input type="hidden" name="status" value="SENT">
+        <button type="submit" class="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition">
+          <i class="fas fa-paper-plane mr-1"></i> Mark Sent
+        </button>
+      </form>
+      <form method="post" action="{% url 'inventory:purchase_order_status' po.pk %}">
+        {% csrf_token %}
+        <input type="hidden" name="status" value="CANCELLED">
+        <button type="submit" class="px-3 py-1.5 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition">
+          <i class="fas fa-ban mr-1"></i> Cancel
+        </button>
+      </form>
+      {% elif request.user.is_manager and po.status == 'SENT' %}
+      <a href="{% url 'inventory:receive_products' %}?po_id={{ po.id }}"
+         class="inline-flex items-center px-3 py-1.5 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg transition">
+        <i class="fas fa-truck-loading mr-1"></i> Receive
+      </a>
+      <form method="post" action="{% url 'inventory:purchase_order_status' po.pk %}">
+        {% csrf_token %}
+        <input type="hidden" name="status" value="CANCELLED">
+        <button type="submit" class="px-3 py-1.5 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition">
+          <i class="fas fa-ban mr-1"></i> Cancel
+        </button>
+      </form>
+      {% endif %}
+      <span class="inline-flex px-3 py-1 text-sm font-semibold rounded-full
+        {% if po.status == 'DRAFT' %}bg-gray-100 text-gray-600
+        {% elif po.status == 'SENT' %}bg-blue-100 text-blue-700
+        {% elif po.status == 'RECEIVED' %}bg-green-100 text-green-700
+        {% else %}bg-red-100 text-red-700{% endif %}">
+        {{ po.get_status_display }}
+      </span>
+    </div>
+  </div>
+
+  <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+    <dl class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+      <div>
+        <dt class="text-gray-500">Vendor</dt>
+        <dd class="font-medium text-gray-800">{{ po.vendor.name }}</dd>
+      </div>
+      <div>
+        <dt class="text-gray-500">Created By</dt>
+        <dd class="text-gray-800">{{ po.created_by.username|default:'—' }}</dd>
+      </div>
+      <div>
+        <dt class="text-gray-500">Date</dt>
+        <dd class="text-gray-800">{{ po.created_at|date:'M j, Y H:i' }}</dd>
+      </div>
+      <div>
+        <dt class="text-gray-500">Items</dt>
+        <dd class="text-gray-800">{{ line_items|length }}</dd>
+      </div>
+    </dl>
+  </div>
+
+  <div class="bg-white rounded-xl shadow-sm border border-gray-200">
+    <div class="border-b border-gray-200">
+      <nav class="flex space-x-4 px-6" role="tablist">
+        <button @click="tab = 'items'" :class="tab === 'items' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'" class="py-3 px-1 text-sm font-medium border-b-2 transition" role="tab">
+          <i class="fas fa-list mr-1"></i> Items
+        </button>
+        <button @click="tab = 'receiving'" :class="tab === 'receiving' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'" class="py-3 px-1 text-sm font-medium border-b-2 transition" role="tab">
+          <i class="fas fa-truck-loading mr-1"></i> Receiving History
+        </button>
+      </nav>
+    </div>
+
+    <div x-show="tab === 'items'" class="p-6">
+      <div class="border border-gray-200 rounded-lg divide-y divide-gray-200">
+        <div class="grid grid-cols-12 gap-2 px-5 py-3 bg-gray-50 text-xs font-semibold text-gray-500 uppercase tracking-wider rounded-t-lg">
+          <div class="col-span-1">#</div>
+          <div class="col-span-3">Product</div>
+          <div class="col-span-2 text-right">Qty</div>
+          <div class="col-span-2 text-right">Unit Cost</div>
+          <div class="col-span-2 text-right">Total</div>
+          {% if request.user.is_manager and po.status == 'DRAFT' %}
+          <div class="col-span-2"></div>
+          {% endif %}
+        </div>
+        {% for item in line_items %}
+        <div class="grid grid-cols-12 gap-2 px-5 py-3 text-sm items-center" x-data="{ editing: false, qty: {{ item.quantity }} }">
+          <div class="col-span-1 text-gray-400">{{ forloop.counter }}</div>
+          <div class="col-span-3 font-medium text-gray-800">{{ item.name }}</div>
+          <div class="col-span-2 text-right text-gray-700">
+            {% if request.user.is_manager and po.status == 'DRAFT' %}
+            <form method="post" action="{% url 'inventory:purchase_order_item_update' item.id %}" x-ref="qtyForm" class="inline">
+              {% csrf_token %}
+              <input type="number" name="quantity" x-model="qty" min="0"
+                     class="w-20 text-right bg-white rounded border border-gray-300 px-2 py-1 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                     @input.debounce.500ms="$refs.qtyForm.submit()">
+            </form>
+            {% else %}
+            {{ item.quantity }}
+            {% endif %}
+          </div>
+          <div class="col-span-2 text-right text-gray-700">${{ item.unit_cost|floatformat:2 }}</div>
+          <div class="col-span-2 text-right font-medium text-gray-800">${{ item.line_total|floatformat:2 }}</div>
+          {% if request.user.is_manager and po.status == 'DRAFT' %}
+          <div class="col-span-2 text-right">
+            <form method="post" action="{% url 'inventory:purchase_order_item_delete' item.id %}">
+              {% csrf_token %}
+              <button type="submit" class="inline-flex items-center px-2 py-1 text-xs font-medium text-red-700 bg-red-100 hover:bg-red-200 rounded-lg transition"
+                      onclick="return confirm('Remove {{ item.name|escapejs }} from this PO?')">
+                <i class="fas fa-times mr-1"></i> Remove
+              </button>
+            </form>
+          </div>
+          {% endif %}
+        </div>
+        {% empty %}
+        <div class="px-5 py-8 text-center text-gray-500 text-sm">No items on this purchase order.</div>
+        {% endfor %}
+        <div class="grid grid-cols-12 gap-2 px-5 py-3 bg-gray-50 text-sm font-semibold rounded-b-lg">
+          <div class="col-span-{% if request.user.is_manager and po.status == 'DRAFT' %}10{% else %}9{% endif %} text-right text-gray-600">Total</div>
+          <div class="col-span-2 text-right text-gray-900">${{ total_cost|floatformat:2 }}</div>
+        </div>
+      </div>
+    </div>
+
+    <div x-show="tab === 'receiving'" class="overflow-x-auto">
+      {% for r in receipts %}
+      <div class="border-b border-gray-100 last:border-b-0">
+        <div class="px-4 py-3 bg-gray-50 text-xs font-semibold text-gray-500 uppercase tracking-wider flex items-center justify-between">
+          <span>Receipt #{{ r.id }} — {{ r.received_at|date:'M j, Y H:i' }}</span>
+          <span>Received by {{ r.received_by.username|default:'—' }}</span>
+        </div>
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+              <th class="px-4 py-2">SKU</th>
+              <th class="px-4 py-2">Product</th>
+              <th class="px-4 py-2">Qty</th>
+              <th class="px-4 py-2">Cost</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100">
+            {% for ri in r.items.all %}
+            <tr class="hover:bg-gray-50 transition">
+              <td class="px-4 py-2 font-mono text-gray-600">{{ ri.product.sku }}</td>
+              <td class="px-4 py-2 text-gray-800">{{ ri.product.name }}</td>
+              <td class="px-4 py-2 text-gray-800">{{ ri.quantity }}</td>
+              <td class="px-4 py-2 text-gray-800">${{ ri.cost_price_at_receiving|floatformat:2 }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% empty %}
+      <div class="px-4 py-8 text-center text-gray-500">No receiving records for this purchase order.</div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<div id="addItemModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 hidden">
+  <div class="bg-gray-100 rounded-xl shadow-2xl w-full max-w-lg mx-4">
+    <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+      <h3 class="text-lg font-semibold text-gray-800">Add Product to PO</h3>
+      <button type="button" onclick="document.getElementById('addItemModal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600">&times;</button>
+    </div>
+    <div class="px-6 py-4">
+      <input type="text" id="poProductSearch" name="q" placeholder="Search products by name or SKU..."
+             class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+             hx-get="{% url 'inventory:purchase_order_product_search' po.pk %}"
+             hx-trigger="keyup changed delay:300ms"
+             hx-target="#poProductResults"
+             hx-indicator="#poProductSpinner">
+      <div id="poProductSpinner" class="htmx-indicator text-center py-2 text-gray-400 text-sm">
+        <i class="fas fa-spinner fa-spin"></i> Searching...
+      </div>
+      <div id="poProductResults" class="mt-3">
+        <div class="px-4 py-6 text-center text-gray-400 text-sm">Type to search products&hellip;</div>
+      </div>
+    </div>
+    <div class="px-6 py-4 border-t border-gray-200 flex justify-end">
+      <button type="button" onclick="document.getElementById('addItemModal').classList.add('hidden')" class="px-4 py-2 text-sm text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition">Close</button>
+    </div>
+  </div>
+</div>
+{% endblock %}

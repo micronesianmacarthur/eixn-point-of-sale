@@ -1,0 +1,43 @@
+from django.urls import path
+
+from . import views
+
+app_name = 'inventory'
+
+urlpatterns = [
+    path('', views.ProductListView.as_view(), name='product_list'),
+    path('table/', views.ProductListTableView.as_view(), name='product_table'),
+    path('<int:pk>/', views.ProductDetailView.as_view(), name='product_detail'),
+    path('<int:pk>/update/', views.ProductUpdateView.as_view(), name='product_update'),
+    path('<int:pk>/delete/', views.ProductDeleteView.as_view(), name='product_delete'),
+    path('vendors/', views.VendorListView.as_view(), name='vendor_list'),
+    path('vendors/create/', views.VendorCreateView.as_view(), name='vendor_create'),
+    path('vendors/create-quick/', views.VendorCreateQuickView.as_view(), name='vendor_create_quick'),
+    path('vendors/<int:pk>/update/', views.VendorUpdateView.as_view(), name='vendor_update'),
+    path('vendors/<int:pk>/delete/', views.VendorDeleteView.as_view(), name='vendor_delete'),
+    path('categories/', views.CategoryListView.as_view(), name='category_list'),
+    path('categories/<int:pk>/update/', views.CategoryUpdateView.as_view(), name='category_update'),
+    path('categories/<int:pk>/delete/', views.CategoryDeleteView.as_view(), name='category_delete'),
+    path('categories/create-quick/', views.CategoryCreateQuickView.as_view(), name='category_create_quick'),
+    path('receive/', views.ReceiveProductsView.as_view(), name='receive_products'),
+    path('receive/search-products/', views.ReceiveProductSearchView.as_view(), name='receive_product_search'),
+    path('bulk-upload/', views.BulkProductUploadView.as_view(), name='bulk_product_upload'),
+    path('bulk-upload/template/', views.BulkProductTemplateView.as_view(), name='bulk_product_template'),
+    path('orders/', views.PurchaseOrderListView.as_view(), name='purchase_order_list'),
+    path('orders/create/', views.PurchaseOrderCreateView.as_view(), name='purchase_order_create'),
+    path('orders/<int:pk>/', views.PurchaseOrderDetailView.as_view(), name='purchase_order_detail'),
+    path('orders/<int:pk>/status/', views.PurchaseOrderStatusView.as_view(), name='purchase_order_status'),
+    path('order-items/<int:pk>/update/', views.PurchaseOrderItemUpdateView.as_view(), name='purchase_order_item_update'),
+    path('order-items/<int:pk>/delete/', views.PurchaseOrderItemDeleteView.as_view(), name='purchase_order_item_delete'),
+    path('orders/<int:pk>/add-item/', views.PurchaseOrderAddItemView.as_view(), name='purchase_order_add_item'),
+    path('orders/<int:pk>/search-products/', views.PurchaseOrderProductSearchView.as_view(), name='purchase_order_product_search'),
+    path('repack/', views.RepackView.as_view(), name='repack'),
+    path('repack/search/', views.RepackProductSearchView.as_view(), name='repack_product_search'),
+    path('bundles/', views.BundleListView.as_view(), name='bundle_list'),
+    path('bundles/create/', views.BundleCreateView.as_view(), name='bundle_create'),
+    path('bundles/search-products/', views.BundleProductSearchView.as_view(), name='bundle_product_search'),
+    path('bundles/<int:pk>/edit/', views.BundleUpdateView.as_view(), name='bundle_edit'),
+    path('bundles/<int:pk>/delete/', views.BundleDeleteView.as_view(), name='bundle_delete'),
+    path('low-stock/', views.LowStockView.as_view(), name='low_stock'),
+    path('create-po/', views.CreateDraftPOView.as_view(), name='create_po'),
+]

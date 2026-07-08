@@ -1,0 +1,154 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}Close Session — Step 1 — {{ block.super }}{% endblock %}
+{% block page_title %}Close Session: Count Drawer{% endblock %}
+{% block content %}
+<div class="max-w-2xl mx-auto">
+  <div class="flex items-center space-x-2 text-sm text-gray-500 mb-4">
+    <span class="font-semibold text-orange-500">Step 1: Count</span>
+    <i class="fas fa-chevron-right text-xs"></i>
+    <span class="text-gray-400">Step 2: Remove</span>
+    <i class="fas fa-chevron-right text-xs"></i>
+    <span class="text-gray-400">Step 3: Review</span>
+  </div>
+
+  <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+    <form method="post"
+          x-data="cashCountData({{ saved_counts|default:'{}'|safe }})"
+          @submit.prevent="validateAndSubmit($event)">
+      {% csrf_token %}
+
+      <div class="mb-4 pb-4 border-b border-gray-200">
+        <h2 class="text-lg font-bold text-gray-800">Session #{{ session.id }}</h2>
+        <p class="text-sm text-gray-500">Opened {{ session.start_time|date:"M j, Y H:i" }} by {{ session.opened_by.username }}</p>
+        <p class="text-sm text-gray-700 mt-1">
+          <strong>Starting Cash:</strong> ${{ session.starting_cash|floatformat:2 }}
+        </p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div>
+          <h3 class="font-semibold text-gray-700 text-sm uppercase mb-3">Coins</h3>
+          <div class="space-y-2">
+            {% for val, key, cat in currency_defs %}
+              {% if cat == 'coins' %}
+                <div class="flex items-center space-x-2">
+                  <label for="count_{{ key }}" class="w-28 text-sm text-gray-600 capitalize">{{ key|title }}:</label>
+                  <input type="number" id="count_{{ key }}" name="count_{{ key }}" min="0" step="1"
+                         x-model.number="counts['{{ key }}']"
+                         @input.debounce="recalc()"
+                         class="w-20 text-right bg-white rounded border border-gray-300 px-2 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                  <span class="w-20 text-right text-sm font-medium text-gray-800"
+                        x-text="'$ ' + formatAmount(counts['{{ key }}'] * {{ val }})"></span>
+                </div>
+              {% endif %}
+            {% endfor %}
+          </div>
+          <div class="flex items-center space-x-2 mt-3 pt-3 border-t border-gray-200 font-semibold">
+            <span class="w-28 text-sm text-gray-700">Coins Total:</span>
+            <span class="w-20"></span>
+            <span class="w-20 text-right text-sm text-gray-900" x-text="'$ ' + formatAmount(coinsTotal)"></span>
+          </div>
+        </div>
+
+        <div>
+          <h3 class="font-semibold text-gray-700 text-sm uppercase mb-3">Bills</h3>
+          <div class="space-y-2">
+            {% for val, key, cat in currency_defs %}
+              {% if cat == 'bills' %}
+                <div class="flex items-center space-x-2">
+                  <label for="count_{{ key }}" class="w-28 text-sm text-gray-600 capitalize">{{ key|title }}:</label>
+                  <input type="number" id="count_{{ key }}" name="count_{{ key }}" min="0" step="1"
+                         x-model.number="counts['{{ key }}']"
+                         @input.debounce="recalc()"
+                         class="w-20 text-right bg-white rounded border border-gray-300 px-2 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                  <span class="w-20 text-right text-sm font-medium text-gray-800"
+                        x-text="'$ ' + formatAmount(counts['{{ key }}'] * {{ val }})"></span>
+                </div>
+              {% endif %}
+            {% endfor %}
+          </div>
+          <div class="flex items-center space-x-2 mt-3 pt-3 border-t border-gray-200 font-semibold">
+            <span class="w-28 text-sm text-gray-700">Bills Total:</span>
+            <span class="w-20"></span>
+            <span class="w-20 text-right text-sm text-gray-900" x-text="'$ ' + formatAmount(billsTotal)"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-6 pt-4 border-t-2 border-gray-300">
+        <div class="flex items-center justify-between">
+          <span class="text-lg font-bold text-gray-800">Grand Total:</span>
+          <span class="text-lg font-bold text-gray-900" x-text="'$ ' + formatAmount(grandTotal)"></span>
+        </div>
+        <div x-show="grandTotal < {{ session.starting_cash }}" x-cloak
+             class="mt-2 px-3 py-2 bg-red-100 text-red-700 text-sm rounded-lg">
+          Drawer total cannot be less than starting cash (${{ session.starting_cash|floatformat:2 }}).
+        </div>
+      </div>
+
+      <div class="mt-6 flex justify-between">
+        <a href="{% url 'sales:dashboard' %}"
+           class="px-4 py-2 text-sm text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition">
+          <i class="fas fa-arrow-left mr-1"></i> Back to Dashboard
+        </a>
+        <button type="submit"
+                :disabled="grandTotal < {{ session.starting_cash }}"
+                class="px-6 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed rounded-lg transition">
+          Continue <i class="fas fa-arrow-right ml-1"></i>
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function cashCountData(savedCounts) {
+    const defKeys = [
+        {% for val, key, cat in currency_defs %}
+            '{{ key }}',
+        {% endfor %}
+    ];
+    const initial = {};
+    defKeys.forEach(k => { initial[k] = (savedCounts && savedCounts[k] !== undefined) ? savedCounts[k] : 0; });
+    return {
+        counts: initial,
+        get coinsTotal() {
+            let t = 0;
+            {% for val, key, cat in currency_defs %}
+                {% if cat == 'coins' %}
+                    t += (this.counts['{{ key }}'] || 0) * {{ val }};
+                {% endif %}
+            {% endfor %}
+            return t;
+        },
+        get billsTotal() {
+            let t = 0;
+            {% for val, key, cat in currency_defs %}
+                {% if cat == 'bills' %}
+                    t += (this.counts['{{ key }}'] || 0) * {{ val }};
+                {% endif %}
+            {% endfor %}
+            return t;
+        },
+        get grandTotal() {
+            return this.coinsTotal + this.billsTotal;
+        },
+        recalc() {
+            // reactivity trigger — computed getters handle the rest
+        },
+        formatAmount(v) {
+            return (v || 0).toFixed(2);
+        },
+        validateAndSubmit(e) {
+            if (this.grandTotal < {{ session.starting_cash }}) {
+                return;
+            }
+            e.target.submit();
+        },
+    };
+}
+</script>
+{% endblock %}

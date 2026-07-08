@@ -1,0 +1,142 @@
+{% extends 'base.html' %}
+{% block title %}Categories — {{ block.super }}{% endblock %}
+{% block page_title %}Category Management{% endblock %}
+{% block content %}
+<div x-data="deleteCategory()">
+
+{% if request.user.is_manager %}
+<div x-data="{ showCreateModal: false, catName: '', catSaving: false, catError: '' }" class="flex justify-end mb-4">
+  <button @click="showCreateModal = true; catError = ''"
+          class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition">
+    <i class="fas fa-plus mr-1"></i> New Category
+  </button>
+
+  <div x-show="showCreateModal" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm mx-4 p-6">
+      <h4 class="text-base font-semibold text-gray-800 mb-4">New Category</h4>
+      <form @submit.prevent="
+        catSaving = true; catError = '';
+        fetch('{% url "inventory:category_create_quick" %}', {
+          method: 'POST',
+          headers: {'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value},
+          body: new URLSearchParams({name: catName})
+        }).then(r => r.ok ? r.json() : Promise.reject('Error'))
+          .then(() => window.location.reload())
+          .catch(e => { catError = e; catSaving = false; });
+      " class="space-y-3">
+        {% csrf_token %}
+        <div>
+          <label class="block text-xs font-medium text-gray-600 mb-1">Name *</label>
+          <input type="text" x-model="catName" required
+                 class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+        </div>
+        <div x-show="catError" class="text-red-600 text-xs" x-text="catError"></div>
+        <div class="flex justify-end space-x-3">
+          <button type="button" @click="showCreateModal = false; catError = ''"
+                  class="px-4 py-2 text-sm text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition">Cancel</button>
+          <button type="submit" :disabled="catSaving || !catName.trim()"
+                  class="px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition disabled:opacity-50">
+            <span x-show="!catSaving">Save</span>
+            <span x-show="catSaving"><i class="fas fa-spinner fa-spin"></i></span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<div class="bg-white rounded-xl shadow-sm border border-gray-200">
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="bg-gray-50 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+          <th class="px-4 py-3">Name</th>
+          <th class="px-4 py-3">Products</th>
+          <th class="px-4 py-3">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for c in categories %}
+          <tr class="hover:bg-gray-50 transition" x-data="{ editMode: false, editName: '{{ c.name|escapejs }}' }">
+            <td class="px-4 py-3 font-medium text-gray-800">{{ c.name }}</td>
+            <td class="px-4 py-3 text-gray-600">{{ c.products.count }}</td>
+            <td class="px-4 py-3">
+              <div class="flex space-x-2">
+                <button @click="editMode = true"
+                        class="text-blue-600 hover:text-blue-800 text-xs font-medium"><i class="fas fa-edit mr-1"></i>Edit</button>
+                <button @click="openDelete({{ c.id }}, '{{ c.name|escapejs }}')"
+                        class="text-red-600 hover:text-red-800 text-xs font-medium"><i class="fas fa-trash mr-1"></i>Delete</button>
+              </div>
+
+              <div x-show="editMode" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+                <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm mx-4 p-6">
+                  <h4 class="text-base font-semibold text-gray-800 mb-4">Edit Category</h4>
+                  <form method="post" action="{% url 'inventory:category_update' c.id %}" class="space-y-3">
+                    {% csrf_token %}
+                    <div>
+                      <label class="block text-xs font-medium text-gray-600 mb-1">Name</label>
+                      <input type="text" name="name" x-model="editName" required
+                             class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    <div class="flex justify-end space-x-3">
+                      <button type="button" @click="editMode = false"
+                              class="px-4 py-2 text-sm text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition">Cancel</button>
+                      <button type="submit"
+                              class="px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition">Save</button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            </td>
+          </tr>
+        {% empty %}
+        <tr><td colspan="3" class="px-4 py-8 text-center text-gray-500">No categories found.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div x-show="showDeleteModal" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+  <div class="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4">
+    <form method="post" x-bind:action="deleteAction">
+      {% csrf_token %}
+      <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+        <h3 class="text-lg font-semibold text-gray-800">Confirm Delete</h3>
+        <button type="button" @click="showDeleteModal = false" class="text-gray-400 hover:text-gray-600">&times;</button>
+      </div>
+      <div class="px-6 py-4 space-y-3">
+        <p class="text-sm text-gray-600">
+          Delete category <strong x-text="deleteName"></strong>? This cannot be undone.
+        </p>
+      </div>
+      <div class="px-6 py-4 border-t border-gray-200 flex justify-end space-x-3">
+        <button type="button" @click="showDeleteModal = false" class="px-4 py-2 text-sm text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition">Cancel</button>
+        <button type="submit" class="px-4 py-2 text-sm text-white bg-red-600 hover:bg-red-700 rounded-lg transition">Delete</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+function deleteCategory() {
+    return {
+        showDeleteModal: false,
+        deletePk: null,
+        deleteAction: '',
+        deleteName: '',
+        openDelete(pk, name) {
+            this.deletePk = pk;
+            this.deleteAction = '/inventory/categories/' + pk + '/delete/';
+            this.deleteName = name;
+            this.showDeleteModal = true;
+            this.$nextTick(function() {
+                var el = this.$el.querySelector('button');
+                if (el) el.focus();
+            });
+        },
+    };
+}
+</script>
+{% endblock %}

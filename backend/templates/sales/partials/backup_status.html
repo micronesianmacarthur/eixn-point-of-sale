@@ -1,0 +1,22 @@
+<div class="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
+  <h2 class="font-semibold text-gray-800"><i class="fas fa-cloud-upload-alt mr-2 text-blue-500"></i>Cloud Backup Sync</h2>
+  <span class="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full
+    {% if backup_status %}bg-green-100 text-green-700{% else %}bg-yellow-100 text-yellow-700{% endif %}">
+    <i class="fas fa-circle mr-1" style="font-size: 6px;"></i>
+    {% if backup_status %}Synced{% else %}Not Configured{% endif %}
+  </span>
+</div>
+<div class="p-5 text-sm text-gray-600">
+  {% if backup_status %}
+    <p>Last sync: <strong>{{ backup_status.last_sync }}</strong></p>
+  {% else %}
+    <p>No backup schedule configured.</p>
+  {% endif %}
+  <button type="button"
+          hx-post="{% url 'sales:backup_trigger' %}"
+          hx-target="#backup-card"
+          hx-swap="innerHTML"
+          class="mt-3 inline-flex items-center px-3 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition">
+    <i class="fas fa-play mr-1"></i> Backup Now
+  </button>
+</div>

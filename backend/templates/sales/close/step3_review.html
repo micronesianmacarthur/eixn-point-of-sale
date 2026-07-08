@@ -1,0 +1,54 @@
+{% extends 'base.html' %}
+{% load static pos_extras %}
+{% block title %}Z-Report — Session #{{ session.id }} — {{ block.super }}{% endblock %}
+{% block page_title %}Close Session: Review &amp; Post{% endblock %}
+{% block extra_css %}
+<style>
+  @page { size: letter portrait; margin: 0.5in; }
+  @media print {
+    body * { visibility: hidden; }
+    #print-area, #print-area * { visibility: visible; }
+    #print-area { position: absolute; left: 0; top: 0; width: 100%; }
+    .no-print { display: none !important; }
+  }
+</style>
+{% endblock %}
+{% block content %}
+<div class="max-w-2xl mx-auto">
+  <div class="flex items-center space-x-2 text-sm text-gray-500 mb-4 no-print">
+    <a href="{% url 'sales:close_step1' session.pk %}" class="text-blue-600 hover:text-blue-800">Step 1: Count</a>
+    <i class="fas fa-chevron-right text-xs"></i>
+    <a href="{% url 'sales:close_step2' session.pk %}" class="text-blue-600 hover:text-blue-800">Step 2: Remove</a>
+    <i class="fas fa-chevron-right text-xs"></i>
+    <span class="font-semibold text-orange-500">Step 3: Review</span>
+  </div>
+
+  <div id="print-area" class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+    {% include 'sales/close/partials/zreport_content.html' %}
+  </div>
+
+  <form method="post" class="mt-4 no-print">
+    {% csrf_token %}
+    <div class="flex justify-between">
+      <button type="submit" name="action" value="back"
+              class="px-4 py-2 text-sm text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition">
+        <i class="fas fa-arrow-left mr-1"></i> Back (Re-count)
+      </button>
+      <div class="flex space-x-3">
+        <a href="{% url 'sales:close_pdf' session.pk %}" target="_blank"
+           class="px-4 py-2 text-sm text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition">
+          <i class="fas fa-download mr-1"></i> Download PDF
+        </a>
+        <button type="button" onclick="window.print()"
+                class="px-4 py-2 text-sm text-blue-700 bg-blue-100 hover:bg-blue-200 rounded-lg transition">
+          <i class="fas fa-print mr-1"></i> Print
+        </button>
+        <button type="submit" name="action" value="post"
+                class="px-6 py-2 text-sm text-white bg-orange-500 hover:bg-orange-600 rounded-lg transition">
+          <i class="fas fa-check mr-1"></i> Post &amp; Close Session
+        </button>
+      </div>
+    </div>
+  </form>
+</div>
+{% endblock %}

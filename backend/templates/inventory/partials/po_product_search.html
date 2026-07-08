@@ -1,0 +1,24 @@
+{% if q %}
+  {% if products %}
+    <div class="divide-y divide-gray-100 max-h-60 overflow-y-auto">
+      {% for p in products %}
+      <form method="post" action="{% url 'inventory:purchase_order_add_item' po.pk %}" class="flex items-center px-4 py-3 hover:bg-gray-50 transition">
+        {% csrf_token %}
+        <input type="hidden" name="product_id" value="{{ p.id }}">
+        <div class="min-w-0 flex-1">
+          <div class="font-medium text-gray-800 truncate">{{ p.name }}</div>
+          <div class="text-xs text-gray-500">{{ p.sku }} &middot; ${{ p.cost_price|floatformat:2 }}</div>
+        </div>
+        <input type="number" name="quantity" value="1" min="1" class="w-16 text-center bg-white rounded border border-gray-300 px-2 py-1 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 mr-2">
+        <button type="submit" class="inline-flex items-center px-3 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition">
+          <i class="fas fa-plus mr-1"></i> Add
+        </button>
+      </form>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="px-4 py-6 text-center text-gray-500 text-sm">No products found.</div>
+  {% endif %}
+{% else %}
+  <div class="px-4 py-6 text-center text-gray-400 text-sm">Type to search products...</div>
+{% endif %}

@@ -1,0 +1,228 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}Dashboard — {{ block.super }}{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+{% block content %}
+
+<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-8">
+  <div class="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-md p-5 text-white">
+    <div class="flex items-center justify-between">
+      <div>
+        <div class="text-blue-100 text-xs font-semibold uppercase tracking-wider">Today's Revenue</div>
+        <div class="text-2xl font-bold mt-1">${{ sales_today_total|floatformat:2 }}</div>
+      </div>
+      <i class="fas fa-calendar text-3xl text-blue-300"></i>
+    </div>
+    <div class="mt-3 flex items-center space-x-3 text-xs text-blue-200">
+      <span>{{ sales_today_count }} transactions</span>
+      <span>&middot;</span>
+      <span>Month: ${{ monthly_total|floatformat:2 }}</span>
+    </div>
+  </div>
+  <div class="bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-xl shadow-md p-5 text-white">
+    <div class="flex items-center justify-between">
+      <div>
+        <div class="text-emerald-100 text-xs font-semibold uppercase tracking-wider">Cash / Card</div>
+        <div class="text-2xl font-bold mt-1">${{ payment_breakdown.CASH.total|add:payment_breakdown.CARD.total|floatformat:2 }}</div>
+      </div>
+      <i class="fas fa-credit-card text-3xl text-emerald-300"></i>
+    </div>
+    <div class="mt-3 flex space-x-3 text-xs text-emerald-200">
+      <span>Cash: ${{ payment_breakdown.CASH.total|floatformat:2 }}</span>
+      <span>&middot;</span>
+      <span>Card: ${{ payment_breakdown.CARD.total|floatformat:2 }}</span>
+    </div>
+  </div>
+  <div class="bg-gradient-to-br from-violet-500 to-violet-600 rounded-xl shadow-md p-5 text-white">
+    <div class="flex items-center justify-between">
+      <div>
+        <div class="text-violet-100 text-xs font-semibold uppercase tracking-wider">Store Credit / Owner</div>
+        <div class="text-2xl font-bold mt-1">${{ payment_breakdown.STORE_CREDIT.total|add:payment_breakdown.OWNER_DRAW.total|floatformat:2 }}</div>
+      </div>
+      <i class="fas fa-hand-holding-usd text-3xl text-violet-300"></i>
+    </div>
+    <div class="mt-3 flex space-x-3 text-xs text-violet-200">
+      <span>Credit: ${{ payment_breakdown.STORE_CREDIT.total|floatformat:2 }}</span>
+      <span>&middot;</span>
+      <span>Owner: ${{ payment_breakdown.OWNER_DRAW.total|floatformat:2 }}</span>
+    </div>
+  </div>
+  <div class="bg-gradient-to-br from-rose-500 to-rose-600 rounded-xl shadow-md p-5 text-white">
+    <div class="flex items-center justify-between">
+      <div>
+        <div class="text-rose-100 text-xs font-semibold uppercase tracking-wider">Active Session</div>
+        <div class="text-2xl font-bold mt-1">{{ active_session|yesno:"Open,Closed" }}</div>
+      </div>
+      <i class="fas fa-cash-register text-3xl text-rose-300"></i>
+    </div>
+    {% if active_session %}
+    <div class="mt-3 text-xs text-rose-200">#{{ active_session.id }} &middot; {{ active_session.start_time|date:"M j, H:i" }}</div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="grid grid-cols-1 xl:grid-cols-3 gap-6 mb-8">
+  <div class="xl:col-span-2 bg-white rounded-xl shadow-sm border border-gray-200">
+    <div class="px-5 py-4 border-b border-gray-200">
+      <h2 class="font-semibold text-gray-800"><i class="fas fa-chart-area mr-2 text-blue-500"></i>30-Day Revenue</h2>
+    </div>
+    <div class="p-5"><canvas id="revenueChart" height="200"></canvas></div>
+  </div>
+  <div class="bg-white rounded-xl shadow-sm border border-gray-200">
+    <div class="px-5 py-4 border-b border-gray-200">
+      <h2 class="font-semibold text-gray-800"><i class="fas fa-chart-pie mr-2 text-blue-500"></i>Today's Payment Mix</h2>
+    </div>
+    <div class="p-5"><canvas id="paymentPieChart" height="200"></canvas></div>
+  </div>
+</div>
+
+<div class="grid grid-cols-1 xl:grid-cols-3 gap-6 mb-8">
+  <div class="bg-white rounded-xl shadow-sm border border-gray-200">
+    <div class="px-5 py-4 border-b border-gray-200">
+      <h2 class="font-semibold text-gray-800"><i class="fas fa-user-clock mr-2 text-green-500"></i>Today by Clerk</h2>
+    </div>
+    <div>
+      {% if sales_by_clerk %}
+      <table class="w-full text-sm">
+        <thead><tr class="text-left text-gray-500 text-xs uppercase border-b border-gray-100">
+          <th class="px-4 py-3">Clerk</th>
+          <th class="px-4 py-3 text-right">Sales</th>
+          <th class="px-4 py-3 text-right">Total</th>
+        </tr></thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for row in sales_by_clerk %}
+          <tr class="hover:bg-gray-50">
+            <td class="px-4 py-3 font-medium text-gray-800">{{ row.cashier_username|default:"—" }}</td>
+            <td class="px-4 py-3 text-right text-gray-600">{{ row.count }}</td>
+            <td class="px-4 py-3 text-right text-gray-800 font-medium">${{ row.total|floatformat:2 }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="p-6 text-center text-gray-400 text-sm">No sales today.</div>
+      {% endif %}
+    </div>
+  </div>
+  <div class="bg-white rounded-xl shadow-sm border border-gray-200">
+    <div class="px-5 py-4 border-b border-gray-200">
+      <h2 class="font-semibold text-gray-800"><i class="fas fa-users mr-2 text-yellow-500"></i>Top Debtors</h2>
+    </div>
+    <div>
+      {% if customer_debt_ranking %}
+      <table class="w-full text-sm">
+        <thead><tr class="text-left text-gray-500 text-xs uppercase border-b border-gray-100">
+          <th class="px-4 py-3">Customer</th>
+          <th class="px-4 py-3 text-right">Balance</th>
+          <th class="px-4 py-3 text-right">Limit</th>
+        </tr></thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for c in customer_debt_ranking %}
+          <tr class="hover:bg-gray-50">
+            <td class="px-4 py-3 font-medium text-gray-800">{{ c.name }}</td>
+            <td class="px-4 py-3 text-right font-medium {% if c.cached_balance > c.credit_limit %}text-red-600{% else %}text-gray-800{% endif %}">${{ c.cached_balance|floatformat:2 }}</td>
+            <td class="px-4 py-3 text-right text-gray-600">${{ c.credit_limit|floatformat:2 }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="p-6 text-center text-gray-400 text-sm">No outstanding debt.</div>
+      {% endif %}
+    </div>
+  </div>
+  <div class="bg-white rounded-xl shadow-sm border border-gray-200">
+    <div class="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
+      <h2 class="font-semibold text-gray-800"><i class="fas fa-exclamation-triangle mr-2 text-yellow-500"></i>Low Stock</h2>
+    </div>
+    <div id="low-stock-panel" class="divide-y divide-gray-100 max-h-80 overflow-y-auto" hx-get="{% url 'inventory:low_stock' %}" hx-trigger="load" hx-swap="innerHTML">
+      <div class="p-4 text-center text-gray-400 text-sm"><i class="fas fa-spinner fa-spin mr-2"></i>Loading...</div>
+    </div>
+  </div>
+</div>
+
+<div class="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-8">
+  <div class="bg-white rounded-xl shadow-sm border border-gray-200">
+    <div class="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
+      <h2 class="font-semibold text-gray-800"><i class="fas fa-chart-bar mr-2 text-indigo-500"></i>Weekly Comparison</h2>
+    </div>
+    <div class="p-5 grid grid-cols-2 gap-4">
+      <div class="text-center p-4 rounded-lg bg-gray-50">
+        <div class="text-xs text-gray-500 uppercase font-semibold">This Week</div>
+        <div class="text-xl font-bold text-gray-800 mt-1">${{ weekly_comparison.this_week.total|floatformat:2 }}</div>
+        <div class="text-xs text-gray-500 mt-1">{{ weekly_comparison.this_week.count }} transactions</div>
+      </div>
+      <div class="text-center p-4 rounded-lg bg-gray-50">
+        <div class="text-xs text-gray-500 uppercase font-semibold">Last Week</div>
+        <div class="text-xl font-bold text-gray-800 mt-1">${{ weekly_comparison.last_week.total|floatformat:2 }}</div>
+        <div class="text-xs text-gray-500 mt-1">{{ weekly_comparison.last_week.count }} transactions</div>
+      </div>
+    </div>
+  </div>
+  <div class="bg-white rounded-xl shadow-sm border border-gray-200">
+    <div class="px-5 py-4 border-b border-gray-200">
+      <h2 class="font-semibold text-gray-800"><i class="fas fa-crown mr-2 text-yellow-500"></i>Top Products Today</h2>
+    </div>
+    <div id="top-products-panel" hx-get="{% url 'sales:top_products_today' %}" hx-trigger="load" hx-swap="innerHTML">
+      <div class="p-4 text-center text-gray-400 text-sm"><i class="fas fa-spinner fa-spin mr-2"></i>Loading...</div>
+    </div>
+  </div>
+</div>
+
+<div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+  <div id="backup-card" class="bg-white rounded-xl shadow-sm border border-gray-200">
+    {% include 'sales/partials/backup_status.html' %}
+  </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.8.0/Chart.min.js" crossorigin="anonymous"></script>
+<script>
+new Chart(document.getElementById('revenueChart'), {
+    type: 'line',
+    data: {
+        labels: {{ chart_labels|safe }},
+        datasets: [{
+            label: 'Revenue ($)',
+            data: {{ chart_data|safe }},
+            lineTension: 0.3,
+            backgroundColor: 'rgba(78, 115, 223, 0.05)',
+            borderColor: 'rgba(78, 115, 223, 1)',
+            pointRadius: 2,
+            borderWidth: 2,
+            fill: true
+        }]
+    },
+    options: {
+        maintainAspectRatio: false,
+        legend: { display: false },
+        scales: {
+            yAxes: [{
+                ticks: { callback: function(v) { return '$' + v; } }
+            }]
+        }
+    }
+});
+
+new Chart(document.getElementById('paymentPieChart'), {
+    type: 'doughnut',
+    data: {
+        labels: ['Cash', 'Card', 'Store Credit', 'Owner Draw'],
+        datasets: [{
+            data: [
+                {{ payment_breakdown.CASH.total|floatformat:0 }},
+                {{ payment_breakdown.CARD.total|floatformat:0 }},
+                {{ payment_breakdown.STORE_CREDIT.total|floatformat:0 }},
+                {{ payment_breakdown.OWNER_DRAW.total|floatformat:0 }}
+            ],
+            backgroundColor: ['#10b981', '#3b82f6', '#8b5cf6', '#f59e0b'],
+            borderWidth: 0
+        }]
+    },
+    options: {
+        maintainAspectRatio: false,
+        legend: { position: 'bottom', labels: { boxWidth: 12, padding: 12 } }
+    }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,23 @@
+{% if products %}
+<table class="w-full text-sm">
+  <thead><tr class="text-left text-gray-500 text-xs uppercase border-b border-gray-100">
+    <th class="px-4 py-3">Product</th>
+    <th class="px-4 py-3 text-right">Sold</th>
+    <th class="px-4 py-3 text-right">Revenue</th>
+  </tr></thead>
+  <tbody class="divide-y divide-gray-100">
+    {% for p in products %}
+    <tr class="hover:bg-gray-50">
+      <td class="px-4 py-3">
+        <div class="font-medium text-gray-800">{{ p.product__name }}</div>
+        <div class="text-xs text-gray-400">{{ p.product__sku }}</div>
+      </td>
+      <td class="px-4 py-3 text-right text-gray-600">{{ p.total_qty }}</td>
+      <td class="px-4 py-3 text-right text-gray-800 font-medium">${{ p.total_revenue|floatformat:2 }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="p-6 text-center text-gray-400 text-sm">No sales today.</div>
+{% endif %}

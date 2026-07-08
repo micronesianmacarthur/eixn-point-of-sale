@@ -1,0 +1,29 @@
+{% if q %}
+  {% if products %}
+    {% for p in products %}
+    <button type="button"
+            @click="addRow({{ p.id }}, '', {{ p.cost_price|stringformat:'.2f' }}, {{ p.retail_price|stringformat:'.2f' }}, {{ p.min_stock_level|stringformat:'.3f' }})"
+            class="w-full text-left px-4 py-3 hover:bg-gray-50 border-b border-gray-100 transition flex items-center justify-between last:border-b-0">
+      <div class="min-w-0 flex-1">
+        <div class="font-medium text-gray-800 truncate">{{ p.name }}</div>
+        <div class="text-xs text-gray-500">
+          {{ p.sku }}
+          {% if not p.is_service %}
+          &middot; Stock: {{ p.stock_quantity }} &middot; Min: {{ p.min_stock_level }}
+          {% else %}
+          &middot; Service item
+          {% endif %}
+        </div>
+      </div>
+      <div class="text-right flex-shrink-0 ml-3">
+        <div class="text-sm font-semibold text-gray-800">${{ p.retail_price|floatformat:2 }}</div>
+        <div class="text-xs text-gray-400">Cost: ${{ p.cost_price|floatformat:2 }}</div>
+      </div>
+    </button>
+    {% endfor %}
+  {% else %}
+    <div class="px-4 py-6 text-center text-gray-500 text-sm">No products found.</div>
+  {% endif %}
+{% else %}
+  <div class="px-4 py-6 text-center text-gray-400 text-sm">Type to search products...</div>
+{% endif %}

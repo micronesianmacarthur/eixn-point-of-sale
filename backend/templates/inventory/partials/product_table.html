@@ -1,0 +1,82 @@
+<div class="overflow-x-auto">
+  <table class="w-full text-sm">
+    <thead>
+      <tr class="bg-gray-50 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+        <th class="px-4 py-3">SKU</th>
+        <th class="px-4 py-3">Name</th>
+        <th class="px-4 py-3">Vendor</th>
+        <th class="px-4 py-3">Stock</th>
+        <th class="px-4 py-3">Retail</th>
+        {% if request.user.is_manager %}
+        <th class="px-4 py-3">Actions</th>
+        {% endif %}
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-100">
+      {% for p in products %}
+      <tr class="hover:bg-gray-50 transition {% if p.vendor.name|upper != 'N/A SERVICE' and not p.is_service and not p.is_variable_weight and p.stock_quantity <= p.min_stock_level %}bg-yellow-50{% endif %}">
+        <td class="px-4 py-3 text-gray-600 font-mono text-xs"><a href="{% url 'inventory:product_detail' p.pk %}" class="text-blue-600 hover:text-blue-800 hover:underline">{{ p.sku }}</a></td>
+        <td class="px-4 py-3 font-medium text-gray-800"><a href="{% url 'inventory:product_detail' p.pk %}" class="text-blue-600 hover:text-blue-800 hover:underline">{{ p.name }}</a></td>
+        <td class="px-4 py-3 text-gray-600">{{ p.vendor.name }}</td>
+        <td class="px-4 py-3">
+          <span class="{% if p.vendor.name|upper != 'N/A SERVICE' and not p.is_service and not p.is_variable_weight and p.stock_quantity <= p.min_stock_level %}text-red-600 font-semibold{% else %}text-gray-600{% endif %}">
+            {{ p.stock_quantity }}
+          </span>
+          <span class="text-xs text-gray-400">/ min {{ p.min_stock_level }}</span>
+        </td>
+        <td class="px-4 py-3 text-gray-800 font-medium">${{ p.retail_price|floatformat:2 }}</td>
+        {% if request.user.is_manager %}
+        <td class="px-4 py-3 flex space-x-2">
+          <div x-data="deleteProductModal()">
+            <form method="post" action="{% url 'inventory:product_delete' p.pk %}" x-ref="deleteForm">
+              {% csrf_token %}
+              <button type="button" @click="confirmDelete('{{ p.name|escapejs }}')" class="inline-flex items-center px-2.5 py-1.5 text-xs font-medium text-red-700 bg-red-100 hover:bg-red-200 rounded-lg transition">
+                <i class="fas fa-trash mr-1"></i> Delete
+              </button>
+            </form>
+            <div x-show="showModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50" x-cloak>
+              <div class="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4">
+                <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+                  <h3 class="text-lg font-semibold text-gray-800">Confirm Delete</h3>
+                  <button type="button" @click="showModal = false" class="text-gray-400 hover:text-gray-600">&times;</button>
+                </div>
+                <div class="px-6 py-4">
+                  <p class="text-sm text-gray-600">
+                    Delete product <strong x-text="productName"></strong>? This cannot be undone.
+                  </p>
+                </div>
+                <div class="px-6 py-4 border-t border-gray-200 flex justify-end space-x-3">
+                  <button type="button" @click="showModal = false" class="px-4 py-2 text-sm text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition">Cancel</button>
+                  <button type="button" @click="submitDelete" class="px-4 py-2 text-sm text-white bg-red-600 hover:bg-red-700 rounded-lg transition">Delete</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </td>
+        {% endif %}
+      </tr>
+      {% empty %}
+      <tr><td colspan="{% if request.user.is_manager %}6{% else %}5{% endif %}" class="px-4 py-8 text-center text-gray-500">No products found.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% if is_paginated %}
+<div class="px-4 py-3 border-t border-gray-200 flex items-center justify-between text-sm">
+  <span class="text-gray-500">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }} ({{ page_obj.paginator.count }} products)</span>
+  <div class="flex space-x-2">
+    {% if page_obj.has_previous %}
+    <a href="?page={{ page_obj.previous_page_number }}"
+       hx-get="{% url 'inventory:product_table' %}?page={{ page_obj.previous_page_number }}"
+       hx-target="#product-table" hx-include="#filter-form" hx-push-url="true"
+       class="px-3 py-1.5 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition">&laquo; Prev</a>
+    {% endif %}
+    {% if page_obj.has_next %}
+    <a href="?page={{ page_obj.next_page_number }}"
+       hx-get="{% url 'inventory:product_table' %}?page={{ page_obj.next_page_number }}"
+       hx-target="#product-table" hx-include="#filter-form" hx-push-url="true"
+       class="px-3 py-1.5 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition">Next &raquo;</a>
+    {% endif %}
+  </div>
+</div>
+{% endif %}

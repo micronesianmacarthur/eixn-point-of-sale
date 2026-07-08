@@ -1,0 +1,223 @@
+{% extends 'base.html' %}
+{% block title %}Repack Manager — {{ block.super }}{% endblock %}
+{% block page_title %}Repack Manager{% endblock %}
+{% block content %}
+
+<div class="mb-6">
+  <label class="block text-sm font-medium text-gray-700 mb-1">Select Bulk Product</label>
+  <div class="relative">
+    <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
+    <input type="text" id="repack-product-search" name="q"
+           class="w-full max-w-md pl-10 pr-4 py-2.5 bg-white rounded-lg border border-gray-300 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+           placeholder="Search products by name or SKU..."
+           hx-get="{% url 'inventory:repack_product_search' %}"
+           hx-trigger="keyup changed delay:300ms"
+           hx-target="#repack-search-results"
+           hx-indicator="#repack-search-spinner">
+    <span id="repack-search-spinner" class="htmx-indicator absolute right-3 top-1/2 -translate-y-1/2 text-blue-500"><i class="fas fa-spinner fa-spin"></i></span>
+  </div>
+  <div id="repack-search-results" class="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-60 overflow-y-auto mt-2 max-w-md">
+    <div class="px-4 py-6 text-center text-gray-400 text-sm">Type to search bulk products&hellip;</div>
+  </div>
+</div>
+
+{% if selected_parent %}
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+  <div class="space-y-6">
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+      <h3 class="font-semibold text-gray-800 mb-1">{{ selected_parent.name }}</h3>
+      <div class="text-sm text-gray-600 space-y-1">
+        <p>Vendor: <strong>{{ selected_parent.vendor.name }}</strong></p>
+        <p>SKU: <code class="bg-gray-100 px-1.5 py-0.5 rounded text-xs">{{ selected_parent.sku }}</code></p>
+        <p>Current Stock: <strong class="text-lg">{{ selected_parent.stock_quantity }}</strong></p>
+      </div>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200">
+      <div class="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
+        <h3 class="font-semibold text-gray-800">Repack Manager</h3>
+      </div>
+      <div class="divide-y divide-gray-100">
+        {% for child in child_breakdowns %}
+        <div class="px-5 py-3 flex items-center justify-between">
+          <div>
+            <span class="font-medium text-gray-800">{{ child.child_product.name }}</span>
+            <span class="text-xs text-gray-500 ml-2">SKU: {{ child.child_product.sku }}</span>
+          </div>
+          <span class="text-sm text-gray-600">{{ child.quantity_required }} per parent</span>
+        </div>
+        {% empty %}
+        <div class="px-5 py-6 text-center text-gray-400 text-sm">
+          No child breakdowns defined yet.
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div class="space-y-6">
+    {% if child_breakdowns %}
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5" x-data="{ showModal: false, execQty: '' }">
+      <h3 class="font-semibold text-gray-800 mb-4">Execute Repack</h3>
+      <form method="post" action="{% url 'inventory:repack' %}" x-ref="execForm">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="execute">
+        <input type="hidden" name="parent_id" value="{{ selected_parent.id }}">
+        <div class="space-y-3">
+          <div>
+            <label class="block text-xs font-medium text-gray-600 mb-1">
+              Parent Units to Break Down (max: {{ selected_parent.stock_quantity }})
+            </label>
+            <input type="number" name="parent_qty" step="0.001" required
+                   max="{{ selected_parent.stock_quantity }}" x-model="execQty"
+                   class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+          </div>
+          <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800">
+            <strong>Will produce:</strong>
+            <ul class="mt-1 space-y-0.5">
+              {% for child in child_breakdowns %}
+              <li>{{ child.child_product.name }} × {{ child.quantity_required }} per unit</li>
+              {% endfor %}
+            </ul>
+          </div>
+          <button type="button" @click="showModal = true"
+                  class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition">
+            <i class="fas fa-cut mr-1"></i> Execute Repack
+          </button>
+        </div>
+      </form>
+
+      <div x-show="showModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50" x-cloak>
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 p-6">
+          <h4 class="text-lg font-semibold text-gray-800 mb-3">Confirm Repack</h4>
+          <p class="text-sm text-gray-600 mb-4">
+            Break down <strong>{{ selected_parent.name }}</strong> × <span x-text="execQty || '0'"></span>?
+          </p>
+          <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800 mb-4">
+            <strong>Will produce:</strong>
+            <ul class="mt-1 space-y-0.5">
+              {% for child in child_breakdowns %}
+              <li>{{ child.child_product.name }} × <span x-text="(parseFloat(execQty) || 0) * {{ child.quantity_required }}"></span></li>
+              {% endfor %}
+            </ul>
+          </div>
+          <div class="flex justify-end space-x-3">
+            <button type="button" @click="showModal = false"
+                    class="px-4 py-2 text-sm text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition">Cancel</button>
+            <button type="button" @click="$refs.execForm.submit()"
+                    class="px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition">Confirm Repack</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if request.user.is_manager %}
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+      {% if child_breakdowns %}
+      <div x-data="{ showForm: false, qtyPerParent: '', parentCost: {{ selected_parent.cost_price }}, markupRate: {{ markup_rate }}, get calculatedCost() { const q = parseFloat(this.qtyPerParent); return q > 0 ? (this.parentCost / q).toFixed(2) : ''; }, get suggestedRetail() { const c = this.calculatedCost; return c ? (parseFloat(c) * (1 + this.markupRate)).toFixed(2) : ''; } }">
+        <button type="button" @click="showForm = !showForm"
+                class="w-full px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition">
+          <i class="fas fa-plus mr-1"></i> <span x-text="showForm ? 'Cancel' : 'Add Another Child'"></span>
+        </button>
+        <div x-show="showForm" class="mt-4">
+          <form method="post" action="{% url 'inventory:repack' %}">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="add_child">
+            <input type="hidden" name="parent_id" value="{{ selected_parent.id }}">
+            <div class="space-y-3">
+              <div>
+                <label class="block text-xs font-medium text-gray-600 mb-1">Product Name *</label>
+                <input type="text" name="name" required
+                       class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+              </div>
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-xs font-medium text-gray-600 mb-1">Qty per Parent Unit *</label>
+                  <input type="number" name="qty_per_parent" step="0.001" required x-model="qtyPerParent"
+                         placeholder="e.g. 10 (10 packs per carton)"
+                         class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-gray-600 mb-1">Cost Price ($) (auto-calc)</label>
+                  <input type="number" name="cost_price" step="0.01" readonly
+                         :value="calculatedCost"
+                         class="w-full bg-gray-100 rounded-lg border border-gray-300 px-3 py-2 text-sm">
+                </div>
+              </div>
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-xs font-medium text-gray-600 mb-1">Retail Price ($) *</label>
+                  <input type="number" name="retail_price" step="0.01" required
+                         class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-gray-600 mb-1">Suggested Retail</label>
+                  <div class="h-10 flex items-center text-sm text-gray-500">$<span x-text="suggestedRetail || '—'"></span></div>
+                </div>
+              </div>
+              <button type="submit"
+                      class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition">
+                <i class="fas fa-plus mr-1"></i> Add Child Product
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+      {% else %}
+      <div x-data="{ qtyPerParent: '', parentCost: {{ selected_parent.cost_price }}, markupRate: {{ markup_rate }}, get calculatedCost() { const q = parseFloat(this.qtyPerParent); return q > 0 ? (this.parentCost / q).toFixed(2) : ''; }, get suggestedRetail() { const c = this.calculatedCost; return c ? (parseFloat(c) * (1 + this.markupRate)).toFixed(2) : ''; } }">
+        <h3 class="font-semibold text-gray-800 mb-4">Add First Child Product</h3>
+        <form method="post" action="{% url 'inventory:repack' %}">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="add_child">
+          <input type="hidden" name="parent_id" value="{{ selected_parent.id }}">
+          <div class="space-y-3">
+            <div>
+              <label class="block text-xs font-medium text-gray-600 mb-1">Product Name *</label>
+              <input type="text" name="name" required
+                     class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-medium text-gray-600 mb-1">Qty per Parent Unit *</label>
+                <input type="number" name="qty_per_parent" step="0.001" required x-model="qtyPerParent"
+                       placeholder="e.g. 10 (10 packs per carton)"
+                       class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-600 mb-1">Cost Price ($) (auto-calc)</label>
+                <input type="number" name="cost_price" step="0.01" readonly
+                       :value="calculatedCost"
+                       class="w-full bg-gray-100 rounded-lg border border-gray-300 px-3 py-2 text-sm">
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-medium text-gray-600 mb-1">Retail Price ($) *</label>
+                <input type="number" name="retail_price" step="0.01" required
+                       class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-600 mb-1">Suggested Retail</label>
+                <div class="h-10 flex items-center text-sm text-gray-500">$<span x-text="suggestedRetail || '—'"></span></div>
+              </div>
+            </div>
+            <button type="submit"
+                    class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition">
+              <i class="fas fa-plus mr-1"></i> Add Child Product
+            </button>
+          </div>
+        </form>
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% else %}
+<div class="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center text-gray-400">
+  <i class="fas fa-box-open text-4xl mb-3"></i>
+  <p class="text-sm">Select a bulk product above to manage its repack breakdowns and execute repacking.</p>
+</div>
+{% endif %}
+{% endblock %}

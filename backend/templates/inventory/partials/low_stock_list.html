@@ -1,0 +1,83 @@
+{% load inventory_extras %}
+{% if total_products == 0 %}
+  <div class="text-center py-8 text-gray-500">
+    <i class="fas fa-box-open text-gray-400 text-3xl mb-2"></i>
+    <p>No product available</p>
+  </div>
+{% elif not vendors and not parent_children %}
+  <div class="text-center py-8 text-gray-500">
+    <i class="fas fa-check-circle text-green-500 text-3xl mb-2"></i>
+    <p>All products are sufficiently stocked.</p>
+  </div>
+{% endif %}
+
+{% if vendors %}
+<div class="space-y-3 mb-4">
+  <h4 class="text-sm font-semibold text-gray-600 uppercase tracking-wider px-1">Purchase Needed</h4>
+  {% for vendor, products in vendors.items %}
+  <div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
+    <div class="px-4 py-3 bg-yellow-50 border-b border-gray-200 flex items-center justify-between">
+      <div>
+        <span class="font-semibold text-gray-800">{{ vendor.name }}</span>
+        <span class="text-sm text-gray-500 ml-2">({{ products|length }} low)</span>
+        {% if vendor.id in vendor_draft_pos %}
+        <a href="{% url 'inventory:purchase_order_detail' vendor_draft_pos|get_item:vendor.id %}" class="text-xs ml-2 text-indigo-600 hover:underline">Draft PO #{{ vendor_draft_pos|get_item:vendor.id }}</a>
+        {% endif %}
+      </div>
+      <button class="text-sm px-3 py-1.5 bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg transition"
+              hx-post="{% url 'inventory:create_po' %}"
+              hx-vals='{"vendor_id": "{{ vendor.id }}", "product_ids": [{% for p in products %}"{{ p.id }}"{% if not forloop.last %},{% endif %}{% endfor %}]}'
+              hx-swap="none">+ Purchase Order</button>
+    </div>
+    <div class="divide-y divide-gray-100">
+      {% for p in products %}
+      <div class="px-4 py-2.5 flex items-center justify-between text-sm">
+        <div>
+          <span class="font-medium text-gray-800">{{ p.name }}</span>
+          <span class="text-gray-500 ml-2">{{ p.sku }}</span>
+          {% if p.id in pending_product_ids %}
+          <span class="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium text-indigo-700 bg-indigo-100 rounded ml-1">Pending PO</span>
+          {% endif %}
+        </div>
+        <div class="text-red-600 font-medium">Stock: {{ p.stock_quantity }} / Min: {{ p.min_stock_level }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if parent_children %}
+<div class="space-y-3">
+  <h4 class="text-sm font-semibold text-gray-600 uppercase tracking-wider px-1">Repack Needed</h4>
+  {% for parent, children in parent_children.items %}
+  <div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
+    <div class="px-4 py-3 bg-purple-50 border-b border-gray-200 flex items-center justify-between">
+      <div>
+        <span class="font-semibold text-gray-800">{{ parent.name }}</span>
+        <span class="text-sm text-gray-500 ml-2">(stock: {{ parent.stock_quantity }})</span>
+      </div>
+      <a href="{% url 'inventory:repack' %}?parent={{ parent.id }}"
+         class="text-sm px-3 py-1.5 bg-purple-500 hover:bg-purple-600 text-white rounded-lg transition">
+        <i class="fas fa-cut mr-1"></i> Repack
+      </a>
+    </div>
+    <div class="divide-y divide-gray-100">
+      {% for item in children %}
+      <div class="px-4 py-2.5 flex items-center justify-between text-sm">
+        <div>
+          <span class="font-medium text-gray-800">{{ item.child.name }}</span>
+          <span class="text-gray-500 ml-2">{{ item.child.sku }}</span>
+        </div>
+        <div class="flex items-center gap-3">
+          <span class="text-xs text-gray-400">{{ item.qty_per_parent }} per parent</span>
+          <span class="text-red-600 font-medium">Stock: {{ item.child.stock_quantity }} / Min: {{ item.child.min_stock_level }}</span>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}

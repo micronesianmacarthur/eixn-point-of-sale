@@ -1,0 +1,114 @@
+{% extends 'base.html' %}
+{% load pos_extras %}
+{% block title %}Close Session — Step 2 — {{ block.super }}{% endblock %}
+{% block page_title %}Close Session: Remove Excess Cash{% endblock %}
+{% block content %}
+<div class="max-w-2xl mx-auto">
+  <div class="flex items-center space-x-2 text-sm text-gray-500 mb-4">
+    <a href="{% url 'sales:close_step1' session.pk %}" class="text-blue-600 hover:text-blue-800">Step 1: Count</a>
+    <i class="fas fa-chevron-right text-xs"></i>
+    <span class="font-semibold text-orange-500">Step 2: Remove</span>
+    <i class="fas fa-chevron-right text-xs"></i>
+    <span class="text-gray-400">Step 3: Review</span>
+  </div>
+
+  <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+    <form method="post">
+      {% csrf_token %}
+
+      <div class="mb-4 pb-4 border-b border-gray-200">
+        <h2 class="text-lg font-bold text-gray-800">Session #{{ session.id }}</h2>
+      </div>
+
+      <div class="mb-4 bg-gray-50 rounded-lg p-4 space-y-2">
+        <div class="flex justify-between text-sm">
+          <span class="text-gray-600">Starting Cash:</span>
+          <span class="font-medium text-gray-800">${{ starting_cash|floatformat:2 }}</span>
+        </div>
+        <div class="flex justify-between text-sm">
+          <span class="text-gray-600">Total Counted:</span>
+          <span class="font-medium text-gray-800">${{ totals.grand_total|floatformat:2 }}</span>
+        </div>
+        <div class="flex justify-between text-base font-bold pt-2 border-t border-gray-200">
+          <span>Amount to Remove:</span>
+          <span class="{% if remove_amount > 0 %}text-red-600{% else %}text-green-600{% endif %}">
+            ${{ remove_amount|floatformat:2 }}
+          </span>
+        </div>
+      </div>
+
+      {% if removal and remove_amount > 0 %}
+        <h3 class="font-semibold text-gray-700 text-sm uppercase mb-3">Suggested Removal Breakdown</h3>
+        <div class="mb-4 overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="text-left text-gray-500 text-xs uppercase border-b border-gray-200">
+                <th class="pb-2">Denomination</th>
+                <th class="pb-2 text-right">Available</th>
+                <th class="pb-2 text-right">Remove</th>
+                <th class="pb-2 text-right">Amount</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+              {% for val, key, cat in currency_defs %}
+                {% if removal.counts|get_item:key > 0 %}
+                <tr>
+                  <td class="py-1.5 text-gray-700 capitalize">{{ key|title }}</td>
+                  <td class="py-1.5 text-right text-gray-600">{{ counts|get_item:key|default:0 }}</td>
+                  <td class="py-1.5 text-right font-medium text-red-600">{{ removal.counts|get_item:key }}</td>
+                  <td class="py-1.5 text-right text-gray-800">${{ removal.amounts|get_item:key|floatformat:2 }}</td>
+                </tr>
+                {% endif %}
+              {% endfor %}
+            </tbody>
+            <tfoot class="font-semibold border-t-2 border-gray-300">
+              <tr>
+                <td class="pt-2 text-gray-700">Coins Removed</td>
+                <td></td>
+                <td></td>
+                <td class="pt-2 text-right">${{ removal.category_totals.coins|floatformat:2 }}</td>
+              </tr>
+              <tr>
+                <td class="text-gray-700">Bills Removed</td>
+                <td></td>
+                <td></td>
+                <td class="text-right">${{ removal.category_totals.bills|floatformat:2 }}</td>
+              </tr>
+              <tr class="text-base">
+                <td class="pt-2 text-gray-800">Total Removed</td>
+                <td></td>
+                <td></td>
+                <td class="pt-2 text-right text-gray-900">${{ removal.total_removed|floatformat:2 }}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+
+        {% if removal.remaining > 0 %}
+          <div class="px-3 py-2 bg-yellow-100 text-yellow-800 text-sm rounded-lg mb-4">
+            <i class="fas fa-exclamation-triangle mr-1"></i>
+            Cannot make exact change with available denominations (${{ removal.remaining|floatformat:2 }} remaining).
+            Remove the difference manually. You may continue and the variance will be recorded.
+          </div>
+        {% endif %}
+      {% elif remove_amount <= 0 %}
+        <div class="px-3 py-2 bg-green-100 text-green-700 text-sm rounded-lg mb-4">
+          <i class="fas fa-check-circle mr-1"></i>
+          No cash needs to be removed — drawer total equals starting cash.
+        </div>
+      {% endif %}
+
+      <div class="mt-6 flex justify-between">
+        <button type="submit" name="action" value="back"
+                class="px-4 py-2 text-sm text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition">
+          <i class="fas fa-arrow-left mr-1"></i> Back (Re-count)
+        </button>
+        <button type="submit" name="action" value="confirm"
+                class="px-6 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition">
+          Confirm &amp; Continue <i class="fas fa-arrow-right ml-1"></i>
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

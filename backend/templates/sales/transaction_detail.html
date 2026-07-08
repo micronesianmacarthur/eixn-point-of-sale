@@ -1,0 +1,112 @@
+{% extends 'base.html' %}
+{% block title %}Transaction #{{ txn.id }} — {{ block.super }}{% endblock %}
+{% block page_title %}Transaction #{{ txn.id }}{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between">
+  <a href="{% url 'sales:sale_list' %}" class="inline-flex items-center text-sm text-gray-500 hover:text-gray-700 transition">
+    <i class="fas fa-arrow-left mr-2"></i> Back to Sales
+  </a>
+  <div class="flex items-center space-x-2">
+    {% if request.user.is_manager and txn.status == 'POSTED' %}
+    <a href="{% url 'sales:checkout' %}?return={{ txn.id }}"
+       class="inline-flex items-center px-4 py-2 text-sm font-medium text-amber-700 bg-amber-100 hover:bg-amber-200 shadow-sm rounded-lg transition">
+      <i class="fas fa-undo mr-1"></i> Return Sale
+    </a>
+    {% if txn.session.status == 'OPEN' %}
+    <form method="post" action="{% url 'sales:void_sale' %}">
+      {% csrf_token %}
+      <input type="hidden" name="pk" value="{{ txn.id }}">
+      <button type="submit"
+              class="inline-flex items-center px-4 py-2 text-sm font-medium text-red-700 bg-red-100 hover:bg-red-200 shadow-sm rounded-lg transition">
+        <i class="fas fa-ban mr-1"></i> Void Sale
+      </button>
+    </form>
+    {% endif %}
+    {% endif %}
+    <button class="inline-flex items-center px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 shadow-sm rounded-lg transition">
+      <i class="fas fa-print mr-1"></i> Reprint Receipt
+    </button>
+  </div>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-4">
+  <div class="lg:col-span-1 space-y-6">
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+      <h3 class="font-semibold text-gray-800 mb-3">Transaction Details</h3>
+      <div class="space-y-2 text-sm text-gray-600">
+        <p><strong>Status:</strong>
+          <span class="inline-flex px-2 py-0.5 text-xs font-semibold rounded-full
+            {% if txn.status == 'POSTED' %}bg-green-100 text-green-700
+            {% elif txn.status == 'VOIDED' %}bg-red-100 text-red-700
+            {% else %}bg-gray-100 text-gray-600{% endif %}">
+            {{ txn.get_status_display }}
+          </span>
+        </p>
+        <p><strong>Customer:</strong> {{ txn.customer.name|default:"&mdash;" }}</p>
+        <p><strong>Cashier:</strong> {{ txn.cashier.username }}</p>
+        <p><strong>Session:</strong> #{{ txn.session_id }}</p>
+        <p><strong>Payment:</strong>
+          <span class="inline-flex px-2 py-0.5 text-xs font-medium rounded-full
+            {% if txn.payment_type == 'CASH' %}bg-green-100 text-green-700
+            {% elif txn.payment_type == 'CARD' %}bg-blue-100 text-blue-700
+            {% elif txn.payment_type == 'STORE_CREDIT' %}bg-yellow-100 text-yellow-700
+            {% elif txn.payment_type == 'OWNER_DRAW' %}bg-purple-100 text-purple-700
+            {% else %}bg-gray-100 text-gray-600{% endif %}">
+            {{ txn.get_payment_type_display }}
+          </span>
+        </p>
+        <p><strong>Total Amount:</strong> <span class="font-semibold {% if txn.total_amount < 0 %}text-green-600{% else %}text-gray-900{% endif %}">${{ txn.total_amount|floatformat:2 }}</span></p>
+        <p><strong>Payment Amount:</strong> ${{ txn.payment_amount|floatformat:2 }}</p>
+
+      </div>
+    </div>
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+      <h3 class="font-semibold text-gray-800 mb-3">Timestamps</h3>
+      <div class="space-y-2 text-sm text-gray-600">
+        <p><strong>Created:</strong> {{ txn.created_at|date:"M j, Y H:i:s" }}</p>
+        <p><strong>Transaction Date:</strong> {{ txn.transaction_date|date:"M j, Y H:i:s" }}</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="lg:col-span-2">
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200">
+      <div class="px-5 py-4 border-b border-gray-200">
+        <h3 class="font-semibold text-gray-800">Line Items</h3>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="bg-gray-50 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+              <th class="px-4 py-3">SKU</th>
+              <th class="px-4 py-3">Product</th>
+              <th class="px-4 py-3 text-right">Qty</th>
+              <th class="px-4 py-3 text-right">Unit Price</th>
+              <th class="px-4 py-3 text-right">Subtotal</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100">
+            {% for item in line_items %}
+            <tr class="hover:bg-gray-50 transition">
+              <td class="px-4 py-3 text-gray-500">{{ item.product.sku }}</td>
+              <td class="px-4 py-3 font-medium text-gray-800">{{ item.product.name }}</td>
+              <td class="px-4 py-3 text-right text-gray-700">{{ item.quantity_sold|floatformat:3 }}</td>
+              <td class="px-4 py-3 text-right text-gray-700">${{ item.price_at_sale|floatformat:2 }}</td>
+              <td class="px-4 py-3 text-right font-medium text-gray-900">${{ item.price_at_sale|floatformat:2 }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="5" class="px-4 py-8 text-center text-gray-500">No line items.</td></tr>
+            {% endfor %}
+          </tbody>
+          <tfoot>
+            <tr class="bg-gray-50 font-semibold">
+              <td colspan="4" class="px-4 py-3 text-right text-gray-700">Total</td>
+              <td class="px-4 py-3 text-right text-gray-900">${{ txn.total_amount|floatformat:2 }}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

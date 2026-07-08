@@ -1,0 +1,139 @@
+{% extends 'base.html' %}
+{% block title %}Sales Management — {{ block.super }}{% endblock %}
+{% block page_title %}Sales Management{% endblock %}
+{% block content %}
+
+{% if not active_session %}
+<div class="bg-yellow-100 border border-yellow-200 text-yellow-700 px-4 py-3 rounded-lg mb-6 flex items-center justify-between">
+  <span><i class="fas fa-exclamation-triangle mr-2"></i>No active register session.</span>
+  <a href="{% url 'sales:checkout' %}" class="text-sm font-medium text-yellow-800 underline">Open one now</a>
+</div>
+{% endif %}
+
+<form id="filter-form">
+  <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
+    <div>
+      <label class="block text-xs font-medium text-gray-500 mb-1">Date From</label>
+      <input type="date" name="date_from" value="{{ current_date_from|default:'' }}"
+             class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+             hx-get="{% url 'sales:sale_table' %}"
+             hx-target="#sale-table"
+             hx-include="#filter-form"
+             hx-trigger="change"
+             hx-push-url="true"
+             hx-indicator="#table-spinner">
+    </div>
+    <div>
+      <label class="block text-xs font-medium text-gray-500 mb-1">Date To</label>
+      <input type="date" name="date_to" value="{{ current_date_to|default:'' }}"
+             class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+             hx-get="{% url 'sales:sale_table' %}"
+             hx-target="#sale-table"
+             hx-include="#filter-form"
+             hx-trigger="change"
+             hx-push-url="true"
+             hx-indicator="#table-spinner">
+    </div>
+    <div>
+      <label class="block text-xs font-medium text-gray-500 mb-1">Customer</label>
+      <input type="text" name="customer" value="{{ current_customer|default:'' }}" placeholder="Name..."
+             class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+             hx-get="{% url 'sales:sale_table' %}"
+             hx-target="#sale-table"
+             hx-include="#filter-form"
+             hx-trigger="keyup changed delay:300ms, search"
+             hx-push-url="true"
+             hx-indicator="#table-spinner">
+    </div>
+    <div>
+      <label class="block text-xs font-medium text-gray-500 mb-1">Min Amount</label>
+      <input type="number" name="amount_min" value="{{ current_amount_min|default:'' }}" placeholder="$0" step="0.01" min="0"
+             class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+             hx-get="{% url 'sales:sale_table' %}"
+             hx-target="#sale-table"
+             hx-include="#filter-form"
+             hx-trigger="keyup changed delay:300ms, search"
+             hx-push-url="true"
+             hx-indicator="#table-spinner">
+    </div>
+    <div>
+      <label class="block text-xs font-medium text-gray-500 mb-1">Max Amount</label>
+      <input type="number" name="amount_max" value="{{ current_amount_max|default:'' }}" placeholder="$999" step="0.01" min="0"
+             class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+             hx-get="{% url 'sales:sale_table' %}"
+             hx-target="#sale-table"
+             hx-include="#filter-form"
+             hx-trigger="keyup changed delay:300ms, search"
+             hx-push-url="true"
+             hx-indicator="#table-spinner">
+    </div>
+    <div>
+      <label class="block text-xs font-medium text-gray-500 mb-1">Cashier</label>
+      <select name="cashier"
+              class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              hx-get="{% url 'sales:sale_table' %}"
+              hx-target="#sale-table"
+              hx-include="#filter-form"
+              hx-trigger="change"
+              hx-push-url="true"
+              hx-indicator="#table-spinner">
+        <option value="">All cashiers</option>
+        {% for u in cashiers %}
+        <option value="{{ u.id }}"{% if current_cashier == u.id|stringformat:"s" %} selected{% endif %}>{{ u.get_full_name|default:u.username }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+  <div id="table-spinner" class="htmx-indicator text-center py-2 text-gray-400 text-sm">
+    <i class="fas fa-spinner fa-spin"></i> Searching...
+  </div>
+</form>
+
+<div id="sale-table" class="bg-white rounded-xl shadow-sm border border-gray-200">
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="bg-gray-50 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+          <th class="px-4 py-3">Txn #</th>
+          <th class="px-4 py-3">Date</th>
+          <th class="px-4 py-3">Session</th>
+          <th class="px-4 py-3">Customer</th>
+          <th class="px-4 py-3">Total</th>
+          <th class="px-4 py-3">Status</th>
+          <th class="px-4 py-3">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for sale in sales %}
+        <tr class="hover:bg-gray-50 transition">
+          <td class="px-4 py-3">
+            <a href="{% url 'sales:transaction_detail' sale.id %}" class="font-mono font-medium text-blue-600 hover:text-blue-800 transition">#{{ sale.id }}</a>
+          </td>
+          <td class="px-4 py-3">
+            <a href="{% url 'sales:transaction_detail' sale.id %}" class="text-gray-500 hover:text-gray-700 transition">{{ sale.created_at|date:"M j, Y H:i" }}</a>
+          </td>
+          <td class="px-4 py-3 text-gray-600">#{{ sale.session_id }}</td>
+          <td class="px-4 py-3 text-gray-600">{{ sale.customer.name|default:"&mdash;" }}</td>
+          <td class="px-4 py-3 font-medium text-gray-900">${{ sale.total_amount|floatformat:2 }}</td>
+          <td class="px-4 py-3">
+            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full
+              {% if sale.status == 'POSTED' %}bg-green-100 text-green-700
+              {% elif sale.status == 'VOIDED' %}bg-red-100 text-red-700
+              {% else %}bg-gray-100 text-gray-600{% endif %}">
+              {{ sale.get_status_display }}
+            </span>
+          </td>
+          <td class="px-4 py-3">
+            <a href="{% url 'sales:transaction_detail' sale.id %}" class="inline-flex items-center px-2.5 py-1.5 text-xs font-medium text-blue-700 bg-blue-100 hover:bg-blue-200 rounded-lg transition">
+              <i class="fas fa-eye mr-1"></i> View Details
+            </a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7" class="px-4 py-8 text-center text-gray-500">No transactions yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,55 @@
+services:
+  db:
+    image: postgres:16-alpine
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=eixn_pos
+      - POSTGRES_USER=eixn
+      - POSTGRES_PASSWORD=eixn
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U eixn -d eixn_pos"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  qcluster:
+    build:
+      context: ./backend
+      dockerfile: ../docker/Dockerfile
+    command: python manage.py qcluster
+    volumes:
+      - ./backend:/app
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgres://eixn:eixn@db:5432/eixn_pos
+      - PYTHONUNBUFFERED=1
+
+  web:
+    build:
+      context: ./backend
+      dockerfile: ../docker/Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    depends_on:
+      db:
+        condition: service_healthy
+      qcluster:
+        condition: service_started
+    environment:
+      - DATABASE_URL=postgres://eixn:eixn@db:5432/eixn_pos
+      - DJANGO_SETTINGS_MODULE=core.settings
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME:-}
+      - S3_ENDPOINT_URL=${S3_ENDPOINT_URL:-}
+      - S3_REGION=${S3_REGION:-us-east-1}
+      - S3_ACCESS_KEY_ID=${S3_ACCESS_KEY_ID:-}
+      - S3_SECRET_ACCESS_KEY=${S3_SECRET_ACCESS_KEY:-}
+      - PRINTER_HOST=${PRINTER_HOST:-}
+      - PRINTER_PORT=${PRINTER_PORT:-9100}
+
+volumes:
+  pgdata:

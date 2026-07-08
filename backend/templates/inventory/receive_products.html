@@ -1,0 +1,374 @@
+{% extends 'base.html' %}
+{% block title %}Receive Products — {{ block.super }}{% endblock %}
+{% block page_title %}Receive Products{% endblock %}
+{% block content %}
+
+{% if not active_session %}
+<div id="sessionModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+  <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm mx-4">
+    <form method="post" action="{% url 'sales:session_create' %}">
+      {% csrf_token %}
+      <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+        <h3 class="text-lg font-semibold text-gray-800">Open Register Session</h3>
+        <a href="{% url 'inventory:receive_products' %}" class="text-gray-400 hover:text-gray-600 transition text-2xl leading-none">&times;</a>
+      </div>
+      <div class="px-6 py-4">
+        <label class="block text-sm font-medium text-gray-700 mb-1">Starting Cash in Drawer ($)</label>
+        <input type="number" name="starting_cash" step="0.01" class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" value="0.00" autofocus required>
+      </div>
+      <div class="px-6 py-4 border-t border-gray-200 flex justify-end">
+        <button type="submit" class="px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition">Open Session</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% else %}
+
+<form method="post"
+      x-data="{
+    rows: [],
+    counter: 0,
+    markupRate: {{ markup_rate }},
+    addRow(pid, qty, cp, rp, ms) {
+      if (pid !== undefined && this.rows.length > 0) {
+        const first = this.rows[0];
+        if (!first.productId && !first.qty && !first.costPrice && !first.retailPrice) {
+          first.productId = pid;
+          first.qty = qty !== undefined ? qty : '';
+          first.costPrice = cp !== undefined ? cp : '';
+          first.retailPrice = rp !== undefined ? rp : '';
+          first.minStock = ms !== undefined ? ms : '';
+          return;
+        }
+      }
+      this.rows.push({
+        id: ++this.counter,
+        isNew: false,
+        isService: false,
+        productId: pid !== undefined ? pid : '',
+        qty: qty !== undefined ? qty : '',
+        costPrice: cp !== undefined ? cp : '',
+        retailPrice: rp !== undefined ? rp : '',
+        minStock: ms !== undefined ? ms : '',
+      });
+    },
+    removeRow(index) { this.rows.splice(index, 1); },
+    showCategoryModal: false, catName: '', catError: '', catCreating: false, catTargetId: null,
+    createCategory() {
+      if (!this.catName.trim()) { this.catError = 'Name is required.'; return; }
+      this.catCreating = true; this.catError = '';
+      fetch('{% url "inventory:category_create_quick" %}', {
+        method: 'POST',
+        headers: { 'X-CSRFToken': '{{ csrf_token }}', 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ name: this.catName }),
+      }).then(r => r.json()).then(data => {
+        if (data.error) { this.catError = data.error; this.catCreating = false; return; }
+        const sel = document.querySelector(`select[name='new_category_${this.catTargetId}']`);
+        if (sel) { const o = document.createElement('option'); o.value = data.id; o.textContent = data.name; o.selected = true; sel.appendChild(o); }
+        this.showCategoryModal = false; this.catName = ''; this.catCreating = false;
+      }).catch(() => { this.catError = 'Failed to create category.'; this.catCreating = false; });
+    },
+    totalCost() {
+      return this.rows.reduce((sum, row) => {
+        const qty = parseFloat(row.qty) || 0;
+        const cp = parseFloat(row.costPrice) || 0;
+        return sum + (qty * cp);
+      }, 0);
+    },
+    injectServiceFlags() {
+      const form = this.$el;
+      form.querySelectorAll(`input[name^='new_is_service_']`).forEach(el => el.remove());
+      this.rows.forEach(row => {
+        if (row.isNew) {
+          const input = document.createElement('input');
+          input.type = 'hidden';
+          input.name = 'new_is_service_' + row.id;
+          input.value = row.isService ? 'on' : '';
+          form.appendChild(input);
+        }
+      });
+    },
+    init() {
+      {% if selected_po and po_items %}
+        {% for item in po_items %}
+          this.addRow({{ item.product_id }}, {{ item.quantity }}, {{ item.product.cost_price }}, {{ item.product.retail_price }}, {{ item.product.min_stock_level }});
+        {% endfor %}
+      {% elif pre_selected_product %}
+        this.addRow({{ pre_selected_product.id }}, '', {{ pre_selected_product.cost_price }}, {{ pre_selected_product.retail_price }}, {{ pre_selected_product.min_stock_level }});
+      {% else %}
+        this.addRow();
+      {% endif %}
+    },
+  }" @submit="injectServiceFlags">
+  {% csrf_token %}
+  {{ form.non_field_errors }}
+  <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
+    <div class="grid grid-cols-3 gap-4">
+      <div>
+      <div x-data="{ showVendorModal: false, vName: '', vContact: '', vPhone: '', vEmail: '', vError: '', creating: false, createVendor() {
+        if (!this.vName.trim()) { this.vError = 'Name is required.'; return; }
+        this.creating = true;
+        this.vError = '';
+        fetch('{% url "inventory:vendor_create_quick" %}', {
+          method: 'POST',
+          headers: { 'X-CSRFToken': '{{ csrf_token }}', 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ name: this.vName, contact_person: this.vContact, phone: this.vPhone, email: this.vEmail }),
+        }).then(r => r.json()).then(data => {
+          if (data.error) { this.vError = data.error; this.creating = false; return; }
+          const sel = this.$refs.vendorSelect;
+          const opt = document.createElement('option');
+          opt.value = data.id; opt.textContent = data.name; opt.selected = true;
+          sel.appendChild(opt);
+          this.showVendorModal = false;
+          this.vName = ''; this.vContact = ''; this.vPhone = ''; this.vEmail = '';
+          this.creating = false;
+        }).catch(() => { this.vError = 'Failed to create vendor.'; this.creating = false; });
+      } }">
+        <label class="block text-sm font-medium text-gray-700 mb-1">Vendor</label>
+        <div class="flex gap-2">
+          <select x-ref="vendorSelect" name="vendor"
+                  class="flex-1 bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  {% if selected_po %}disabled{% endif %}>
+            <option value="">— Select —</option>
+            {% for v in vendor_list %}
+            <option value="{{ v.id }}" {% if form.initial.vendor and form.initial.vendor.id == v.id %}selected{% endif %}>{{ v.name }}</option>
+            {% endfor %}
+          </select>
+          {% if not selected_po %}
+          <button type="button" @click="showVendorModal = true"
+                  class="inline-flex items-center px-3 py-2 text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition">
+            <i class="fas fa-plus mr-1"></i> New
+          </button>
+          {% endif %}
+        </div>
+        {% if selected_po %}
+        <input type="hidden" name="vendor" value="{{ selected_po.vendor_id }}">
+        {% endif %}
+
+        <div x-show="showVendorModal" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div class="bg-gray-100 rounded-xl shadow-2xl w-full max-w-sm mx-4">
+            <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+              <h3 class="text-lg font-semibold text-gray-800">New Vendor</h3>
+              <button type="button" @click="showVendorModal = false" class="text-gray-400 hover:text-gray-600">&times;</button>
+            </div>
+            <div class="px-6 py-4 space-y-4">
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+                <input type="text" x-model="vName" class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Vendor name">
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Contact Person</label>
+                <input type="text" x-model="vContact" class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Contact person">
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                <input type="text" x-model="vPhone" class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Phone">
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                <input type="email" x-model="vEmail" class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Email">
+              </div>
+              <p x-show="vError" x-text="vError" class="text-sm text-red-600"></p>
+            </div>
+            <div class="px-6 py-4 border-t border-gray-200 flex justify-end space-x-3">
+              <button type="button" @click="showVendorModal = false" class="px-4 py-2 text-sm text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition">Cancel</button>
+              <button type="button" @click="createVendor" :disabled="creating"
+                      class="px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition disabled:opacity-50"
+                      x-text="creating ? 'Creating...' : 'Save'">
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Purchase Order</label>
+        <select name="purchase_order"
+                class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+          <option value="">— None —</option>
+          {% for po in po_list %}
+          <option value="{{ po.id }}" {% if form.initial.purchase_order and form.initial.purchase_order.id == po.id %}selected{% endif %}>PO-{{ po.id }} ({{ po.vendor.name }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="flex items-end pb-2">
+        <div class="w-full">
+          <label class="block text-sm font-medium text-gray-700 mb-1">Vendor Receipt Number</label>
+          <input type="text" name="receipt_number"
+                 class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                 placeholder="Optional">
+        </div>
+      </div>
+    </div>
+    <div x-data="{ showOwner: false }" class="mt-4 pt-4 border-t border-gray-200">
+      <label class="inline-flex items-center cursor-pointer">
+        <input type="checkbox" x-model="showOwner" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+        <span class="ml-2 text-sm text-gray-700">Owner contributing to this receipt?</span>
+      </label>
+      <div x-show="showOwner" class="mt-3">
+        <label class="block text-sm font-medium text-gray-700 mb-1">Owner Contribution ($)</label>
+        <input type="number" name="owner_contribution_amount" step="0.01" min="0"
+               class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 max-w-xs"
+               placeholder="0.00">
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
+      <div class="flex items-center gap-3 mb-3">
+        <div class="relative flex-1">
+          <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
+          <input type="text" id="product-search" name="q"
+                 class="w-full pl-10 pr-10 py-2.5 bg-white rounded-lg border border-gray-300 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                 placeholder="Search existing products by name or SKU..."
+                 hx-get="{% url 'inventory:receive_product_search' %}"
+                 hx-trigger="keyup changed delay:300ms"
+                 hx-target="#receive-search-results"
+                 hx-indicator="#search-spinner">
+          <span id="search-spinner" class="htmx-indicator absolute right-3 top-1/2 -translate-y-1/2 text-blue-500"><i class="fas fa-spinner fa-spin"></i></span>
+        </div>
+      </div>
+      <div id="receive-search-results" class="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-60 overflow-y-auto">
+        <div class="px-4 py-6 text-center text-gray-400 text-sm">Type to search products...</div>
+      </div>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-semibold text-gray-800"><i class="fas fa-boxes mr-2"></i> Items</h2>
+        <span class="text-sm text-gray-500" x-show="rows.length" x-text="rows.length + ' item(s)'"></span>
+      </div>
+      <template x-for="(row, index) in rows" :key="row.id">
+        <div class="border border-gray-200 rounded-lg p-4 mb-3 hover:border-blue-200 transition">
+          <div class="grid grid-cols-12 gap-3 items-start">
+            <div class="col-span-3">
+              <template x-if="!row.isNew">
+                <div>
+                  <label class="block text-xs font-medium text-gray-600 mb-1">Product</label>
+                  <select :name="'product_' + row.id" x-model="row.productId"
+                          class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                    <option value="">— Select —</option>
+                    {% for p in product_list %}
+                    <option value="{{ p.id }}">{{ p.sku }} — {{ p.name }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+              </template>
+              <template x-if="row.isNew">
+                <div>
+                  <label class="block text-xs font-medium text-gray-600 mb-1">New Product Name</label>
+                  <input :name="'new_name_' + row.id" x-model="row.name"
+                         class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 mb-2"
+                         placeholder="Product name">
+                  <div class="flex gap-2 items-start mb-2">
+                    <select :name="'new_category_' + row.id"
+                            class="flex-1 bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                      <option value="">— Category —</option>
+                      {% for c in category_list %}
+                      <option value="{{ c.id }}">{{ c.name }}</option>
+                      {% endfor %}
+                    </select>
+                    <button type="button" @click="catTargetId = row.id; showCategoryModal = true"
+                            class="inline-flex items-center px-2.5 py-2 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition whitespace-nowrap">
+                      <i class="fas fa-plus mr-1"></i> New
+                    </button>
+                  </div>
+                  <div class="flex gap-3 text-xs">
+                    <label class="inline-flex items-center">
+                      <input type="checkbox" x-model="row.isService" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                      <span class="ml-1.5 text-gray-600">Non-stock</span>
+                    </label>
+                    <label class="inline-flex items-center">
+                      <input type="checkbox" :name="'new_is_variable_weight_' + row.id" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                      <span class="ml-1.5 text-gray-600">Variable Weight</span>
+                    </label>
+                  </div>
+                </div>
+              </template>
+              <button type="button" @click="row.isNew = !row.isNew"
+                      class="mt-1 text-xs text-blue-600 hover:text-blue-800 transition"
+                      x-text="row.isNew ? '← Pick existing product' : '+ New product'">
+              </button>
+            </div>
+            <div class="col-span-2">
+              <label class="block text-xs font-medium text-gray-600 mb-1">Quantity</label>
+              <input :name="'qty_' + row.id" type="number" step="0.001" min="0" x-model="row.qty"
+                     class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                     placeholder="0">
+            </div>
+            <div class="col-span-2">
+              <label class="block text-xs font-medium text-gray-600 mb-1">Cost Price ($)</label>
+              <input :name="'cost_price_' + row.id" type="number" step="0.01" min="0" x-model="row.costPrice"
+                     class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                     placeholder="0.00">
+            </div>
+            <div class="col-span-2">
+              <label class="block text-xs font-medium text-gray-600 mb-1">Retail Price ($)</label>
+              <input :name="'retail_price_' + row.id" type="number" step="0.01" min="0" x-model="row.retailPrice"
+                     class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                     placeholder="0.00">
+              <p class="mt-0.5 text-xs text-gray-400" x-show="row.costPrice">
+                Suggested: $<span x-text="(parseFloat(row.costPrice) * (1 + markupRate)).toFixed(2)"></span>
+              </p>
+            </div>
+            <div class="col-span-2">
+              <label class="block text-xs font-medium text-gray-600 mb-1">Min Stock Level</label>
+              <input :name="'min_stock_' + row.id" type="number" step="0.001" min="0" x-model="row.minStock"
+                     class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                     placeholder="0">
+            </div>
+            <div class="col-span-1 flex items-end pb-1 justify-center">
+              <button type="button" @click="removeRow(index)" x-show="rows.length > 1"
+                      class="text-red-400 hover:text-red-600 transition p-1">
+                <i class="fas fa-trash"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <div class="flex items-center justify-between mt-4">
+        <button type="button" @click="addRow()"
+                class="inline-flex items-center px-4 py-2 text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition">
+          <i class="fas fa-plus mr-1"></i> Add Item
+        </button>
+        <div>
+          <div class="text-right mb-2">
+            <span class="text-sm font-semibold text-gray-800" x-text="'Total Cost: $' + totalCost().toFixed(2)"></span>
+          </div>
+          <span class="text-sm text-gray-500 mr-3" x-text="rows.length + ' item(s)'"></span>
+          <button type="submit"
+                  class="inline-flex items-center px-6 py-2.5 text-sm font-semibold text-white bg-green-600 hover:bg-green-700 rounded-lg shadow-sm transition">
+            <i class="fas fa-check mr-1"></i> Receive Products
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div x-show="showCategoryModal" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+      <div class="bg-gray-100 rounded-xl shadow-2xl w-full max-w-sm mx-4">
+        <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+          <h3 class="text-lg font-semibold text-gray-800">New Category</h3>
+          <button type="button" @click="showCategoryModal = false" class="text-gray-400 hover:text-gray-600">&times;</button>
+        </div>
+        <div class="px-6 py-4 space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+            <input type="text" x-model="catName" class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Category name" @keyup.enter="createCategory">
+          </div>
+          <p x-show="catError" x-text="catError" class="text-sm text-red-600"></p>
+        </div>
+        <div class="px-6 py-4 border-t border-gray-200 flex justify-end space-x-3">
+          <button type="button" @click="showCategoryModal = false" class="px-4 py-2 text-sm text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition">Cancel</button>
+          <button type="button" @click="createCategory" :disabled="catCreating"
+                  class="px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition disabled:opacity-50"
+                  x-text="catCreating ? 'Creating...' : 'Save'">
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</form>
+{% endif %}
+{% endblock %}

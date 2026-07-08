@@ -1,0 +1,156 @@
+{% load pos_extras %}
+<div class="flex items-center justify-between mb-6 pb-4 border-b border-gray-200">
+  <div>
+    <h2 class="text-lg font-bold text-gray-800">{{ business.business_name|default:"EIXN POS" }} &mdash; Z-Report</h2>
+    <p class="text-xs text-gray-500 mt-1">Session #{{ session.id }}</p>
+  </div>
+  <div class="text-right text-xs text-gray-500">
+    <div>Opened: {{ session.start_time|date:"M j, Y H:i" }}</div>
+    <div>By: {{ session.opened_by.username }}</div>
+  </div>
+</div>
+
+<div class="grid grid-cols-2 gap-4 mb-6">
+  <div class="bg-gray-50 rounded-lg p-4 text-center">
+    <div class="text-xs text-gray-500 uppercase font-semibold">Total Revenue</div>
+    <div class="text-xl font-bold text-gray-800 mt-1">${{ pnl.total_revenue|floatformat:2 }}</div>
+  </div>
+  <div class="bg-gray-50 rounded-lg p-4 text-center">
+    <div class="text-xs text-gray-500 uppercase font-semibold">Gross Profit</div>
+    <div class="text-xl font-bold text-green-600 mt-1">${{ pnl.gross_profit|floatformat:2 }}</div>
+    <div class="text-xs text-gray-500">{{ pnl.margin|floatformat:1 }}% margin</div>
+  </div>
+  <div class="bg-gray-50 rounded-lg p-4 text-center">
+    <div class="text-xs text-gray-500 uppercase font-semibold">Transactions</div>
+    <div class="text-xl font-bold text-gray-800 mt-1">{{ pnl.sale_count }}</div>
+  </div>
+  <div class="bg-gray-50 rounded-lg p-4 text-center">
+    <div class="text-xs text-gray-500 uppercase font-semibold">Avg Ticket</div>
+    <div class="text-xl font-bold text-gray-800 mt-1">${{ pnl.average_ticket|floatformat:2 }}</div>
+  </div>
+</div>
+
+<div class="mb-6">
+  <h3 class="font-semibold text-gray-700 text-sm uppercase mb-3">Payment Breakdown</h3>
+  <table class="w-full text-sm">
+    <thead><tr class="text-left text-gray-500 text-xs uppercase border-b border-gray-200">
+      <th class="pb-2">Method</th>
+      <th class="pb-2 text-right">Transactions</th>
+      <th class="pb-2 text-right">Amount</th>
+    </tr></thead>
+    <tbody class="divide-y divide-gray-100">
+      {% with pb=pnl.payment_breakdown %}
+      <tr>
+        <td class="py-2 font-medium text-gray-800">Cash</td>
+        <td class="py-2 text-right text-gray-600">{{ pb.CASH.count|default:0 }}</td>
+        <td class="py-2 text-right text-gray-800">${{ pb.CASH.total|default:0|floatformat:2 }}</td>
+      </tr>
+      <tr>
+        <td class="py-2 font-medium text-gray-800">Card</td>
+        <td class="py-2 text-right text-gray-600">{{ pb.CARD.count|default:0 }}</td>
+        <td class="py-2 text-right text-gray-800">${{ pb.CARD.total|default:0|floatformat:2 }}</td>
+      </tr>
+      <tr>
+        <td class="py-2 font-medium text-gray-800">Store Credit</td>
+        <td class="py-2 text-right text-gray-600">{{ pb.STORE_CREDIT.count|default:0 }}</td>
+        <td class="py-2 text-right text-gray-800">${{ pb.STORE_CREDIT.total|default:0|floatformat:2 }}</td>
+      </tr>
+      <tr>
+        <td class="py-2 font-medium text-gray-800">Owner Draw</td>
+        <td class="py-2 text-right text-gray-600">{{ pb.OWNER_DRAW.count|default:0 }}</td>
+        <td class="py-2 text-right text-gray-800">${{ pb.OWNER_DRAW.total|default:0|floatformat:2 }}</td>
+      </tr>
+      {% endwith %}
+      <tr class="font-bold border-t-2 border-gray-300">
+        <td class="py-2 text-gray-800">Total</td>
+        <td class="py-2 text-right text-gray-600">{{ pnl.sale_count }}</td>
+        <td class="py-2 text-right text-gray-900">${{ pnl.total_revenue|floatformat:2 }}</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="mb-6">
+  <h3 class="font-semibold text-gray-700 text-sm uppercase mb-3">Cash Reconciliation</h3>
+  <table class="w-full text-sm">
+    <tbody class="divide-y divide-gray-100">
+      <tr>
+        <td class="py-2 text-gray-600">Starting Cash</td>
+        <td class="py-2 text-right text-gray-800 font-medium">${{ session.starting_cash|floatformat:2 }}</td>
+      </tr>
+      <tr>
+        <td class="py-2 text-gray-600">Cash Sales Today</td>
+        <td class="py-2 text-right text-gray-800 font-medium">${{ pnl.payment_breakdown.CASH.total|floatformat:2 }}</td>
+      </tr>
+      <tr class="font-bold border-t-2 border-gray-300">
+        <td class="py-2 text-gray-800">Expected Cash in Drawer</td>
+        <td class="py-2 text-right text-gray-900">${{ expected_cash|floatformat:2 }}</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="mb-6">
+  <h3 class="font-semibold text-gray-700 text-sm uppercase mb-3">Counted Cash</h3>
+  <table class="w-full text-sm">
+    <thead><tr class="text-left text-gray-500 text-xs uppercase border-b border-gray-200">
+      <th class="pb-2">Denomination</th>
+      <th class="pb-2 text-right">Count</th>
+      <th class="pb-2 text-right">Amount</th>
+    </tr></thead>
+    <tbody class="divide-y divide-gray-100">
+      {% for val, key, cat in currency_defs %}
+        {% with count=counts|get_item:key %}
+          {% if count > 0 %}
+          <tr>
+            <td class="py-1.5 text-gray-700 capitalize">{{ key|title }}</td>
+            <td class="py-1.5 text-right text-gray-600">{{ count }}</td>
+            <td class="py-1.5 text-right text-gray-800">${{ count|multiply:val|floatformat:2 }}</td>
+          </tr>
+          {% endif %}
+        {% endwith %}
+      {% endfor %}
+    </tbody>
+    <tfoot class="font-semibold border-t-2 border-gray-300">
+      <tr>
+        <td class="pt-2 text-gray-800">Coins Total</td>
+        <td></td>
+        <td class="pt-2 text-right">${{ totals.coins|floatformat:2 }}</td>
+      </tr>
+      <tr>
+        <td class="text-gray-800">Bills Total</td>
+        <td></td>
+        <td class="text-right">${{ totals.bills|floatformat:2 }}</td>
+      </tr>
+      <tr>
+        <td class="pt-2 text-gray-900 font-bold text-base">Actual Total</td>
+        <td></td>
+        <td class="pt-2 text-right text-gray-900 font-bold text-base">${{ grand_total|floatformat:2 }}</td>
+      </tr>
+      <tr>
+        <td class="pt-2 text-gray-900 font-bold">Variance</td>
+        <td></td>
+        <td class="pt-2 text-right font-bold {% if variance >= 0 %}text-green-600{% else %}text-red-600{% endif %}">
+          {% if variance >= 0 %}+{% endif %}${{ variance|floatformat:2 }}
+        </td>
+      </tr>
+    </tfoot>
+  </table>
+</div>
+
+<div class="mb-6">
+  <h3 class="font-semibold text-gray-700 text-sm uppercase mb-3">Removal Summary</h3>
+  <p class="text-sm text-gray-600">
+    {% if remove_amount > 0 %}
+      Removed <strong>${{ removal.total_removed|floatformat:2 }}</strong> from drawer.
+      Starting cash of <strong>${{ session.starting_cash|floatformat:2 }}</strong> retained for next session.
+      {% if removal.remaining > 0 %}
+        <span class="text-yellow-600 ml-1">
+          (Unable to make exact change — ${{ removal.remaining|floatformat:2 }} remains, variance recorded.)
+        </span>
+      {% endif %}
+    {% else %}
+      No cash removed — drawer total matches starting cash.
+    {% endif %}
+  </p>
+</div>

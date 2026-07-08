@@ -1,0 +1,86 @@
+{% extends 'base.html' %}
+{% block title %}Bulk Product Upload — {{ block.super }}{% endblock %}
+{% block page_title %}Bulk Product Upload{% endblock %}
+{% block content %}
+
+<div class="max-w-2xl mx-auto">
+  <div class="bg-white rounded-xl shadow-sm border border-gray-200">
+    <div class="px-5 py-4 border-b border-gray-200">
+      <h2 class="font-semibold text-gray-800"><i class="fas fa-file-csv mr-2 text-green-500"></i>Upload Product CSV</h2>
+    </div>
+    <div class="px-5 py-4">
+      <form method="post" enctype="multipart/form-data" class="space-y-4">
+        {% csrf_token %}
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">CSV File</label>
+          <input type="file" name="csv_file" accept=".csv" required
+                 class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+        </div>
+
+        <div class="flex items-center space-x-2">
+          <input type="checkbox" name="dry_run" id="dry_run"
+                 class="h-4 w-4 text-blue-600 border-gray-300 rounded">
+          <label for="dry_run" class="text-sm text-gray-600">Dry run — validate only, do not save</label>
+        </div>
+
+        <div class="flex space-x-3">
+          <a href="{% url 'inventory:product_list' %}"
+             class="px-4 py-2.5 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition">Cancel</a>
+          <button type="submit"
+                  class="px-4 py-2.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition">
+            <i class="fas fa-upload mr-1"></i> Upload &amp; Import
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="mt-6 bg-white rounded-xl shadow-sm border border-gray-200">
+    <div class="px-5 py-4 border-b border-gray-200">
+      <h3 class="font-semibold text-gray-800"><i class="fas fa-info-circle mr-2 text-blue-500"></i>CSV Format</h3>
+    </div>
+    <div class="px-5 py-4 text-sm text-gray-600 space-y-2 overflow-x-auto">
+      <p>Your CSV must include <strong>vendor_name</strong> and <strong>name</strong>. The <strong>sku</strong> column is optional — if left blank, the system auto-generates one from the category name. All other columns are optional (default to 0/false).</p>
+      <table class="w-full text-xs border-collapse">
+        <thead>
+          <tr class="bg-gray-50">
+            <th class="px-3 py-2 text-left font-medium text-gray-700">Column</th>
+            <th class="px-3 py-2 text-left font-medium text-gray-700">Required</th>
+            <th class="px-3 py-2 text-left font-medium text-gray-700">Description</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          <tr><td class="px-3 py-1.5">vendor_name</td><td class="px-3 py-1.5 text-green-600">Yes</td><td class="px-3 py-1.5">Vendor name (created if new)</td></tr>
+          <tr><td class="px-3 py-1.5">name</td><td class="px-3 py-1.5 text-green-600">Yes</td><td class="px-3 py-1.5">Product name</td></tr>
+          <tr><td class="px-3 py-1.5">sku</td><td class="px-3 py-1.5 text-yellow-600">No</td><td class="px-3 py-1.5">Auto-generated if left blank</td></tr>
+          <tr><td class="px-3 py-1.5">category_name</td><td class="px-3 py-1.5 text-yellow-600">No</td><td class="px-3 py-1.5">Category name (used for SKU generation)</td></tr>
+          <tr><td class="px-3 py-1.5">cost_price</td><td class="px-3 py-1.5 text-yellow-600">No</td><td class="px-3 py-1.5">Defaults to 0</td></tr>
+          <tr><td class="px-3 py-1.5">retail_price</td><td class="px-3 py-1.5 text-yellow-600">No</td><td class="px-3 py-1.5">Defaults to 0</td></tr>
+          <tr><td class="px-3 py-1.5">discount_price</td><td class="px-3 py-1.5 text-yellow-600">No</td><td class="px-3 py-1.5">Defaults to 0</td></tr>
+          <tr><td class="px-3 py-1.5">is_on_sale</td><td class="px-3 py-1.5 text-yellow-600">No</td><td class="px-3 py-1.5">1/0, yes/no, true/false</td></tr>
+          <tr><td class="px-3 py-1.5">is_service</td><td class="px-3 py-1.5 text-yellow-600">No</td><td class="px-3 py-1.5">Flags 100% margin item</td></tr>
+          <tr><td class="px-3 py-1.5">is_variable_weight</td><td class="px-3 py-1.5 text-yellow-600">No</td><td class="px-3 py-1.5">Flags Tingi fractional item</td></tr>
+          <tr><td class="px-3 py-1.5">stock_quantity</td><td class="px-3 py-1.5 text-yellow-600">No</td><td class="px-3 py-1.5">Defaults to 0</td></tr>
+          <tr><td class="px-3 py-1.5">min_stock_level</td><td class="px-3 py-1.5 text-yellow-600">No</td><td class="px-3 py-1.5">Defaults to 0</td></tr>
+          <tr><td class="px-3 py-1.5">child_sku</td><td class="px-3 py-1.5 text-yellow-600">No</td><td class="px-3 py-1.5">Ingredient SKU for composites</td></tr>
+          <tr><td class="px-3 py-1.5">child_qty</td><td class="px-3 py-1.5 text-yellow-600">No</td><td class="px-3 py-1.5">Ingredient quantity</td></tr>
+        </tbody>
+      </table>
+      <div class="mt-4 p-3 bg-gray-50 rounded-lg">
+        <p class="font-medium text-gray-700 mb-1">Sample CSV:</p>
+        <code class="text-xs text-gray-600 whitespace-pre">vendor_name,name,sku,category_name,cost_price,retail_price,discount_price,is_on_sale,is_service,is_variable_weight,stock_quantity,min_stock_level,child_sku,child_qty
+Acme Supply,Sourdough Bread,,Bakery,2.50,5.99,,,,,50,10,FLO-001,0.5
+Acme Supply,Whole Wheat,,Bakery,2.75,6.49,4.99,TRUE,,,30,5,FLO-001,0.5
+Bob's Farm,Organic Flour,FLO-001,Ingredients,1.00,2.50,,,,,200,20,,
+</code>
+        <div class="mt-3">
+          <a href="{% url 'inventory:bulk_product_template' %}" class="inline-flex items-center text-sm text-blue-600 hover:text-blue-800 hover:underline">
+            <i class="fas fa-download mr-1"></i> Download CSV template
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

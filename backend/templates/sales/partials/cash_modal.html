@@ -1,0 +1,49 @@
+<div x-show="showCashModal" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6">
+    <h3 class="text-lg font-semibold text-gray-800 text-center mb-1">Enter Cash Tendered</h3>
+    <p class="text-xs text-gray-500 text-center mb-4">Total: <strong class="text-gray-800" x-text="'$' + total.toFixed(2)"></strong></p>
+
+    <div class="bg-gray-50 rounded-xl px-4 py-3 mb-4 text-right">
+      <span class="text-3xl font-bold text-gray-800" x-text="'$' + displayAmount"></span>
+      <div class="text-xs text-gray-500 mt-1">
+        <template x-if="parseFloat(cashBuffer || 0) / 100 >= total">
+          <span class="text-green-600 font-semibold">Change: $<span x-text="(parseFloat(cashBuffer || 0) / 100 - total).toFixed(2)"></span></span>
+        </template>
+        <template x-if="parseFloat(cashBuffer || 0) / 100 < total">
+          <span class="text-red-600 font-semibold">Short: $<span x-text="(total - parseFloat(cashBuffer || 0) / 100).toFixed(2)"></span></span>
+        </template>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-3 gap-2 mb-4">
+      <button type="button" @click="cashBuffer = '500'" class="py-3 bg-blue-50 hover:bg-blue-100 text-blue-700 font-medium rounded-xl text-sm transition">$5</button>
+      <button type="button" @click="cashBuffer = '1000'" class="py-3 bg-blue-50 hover:bg-blue-100 text-blue-700 font-medium rounded-xl text-sm transition">$10</button>
+      <button type="button" @click="cashBuffer = '2000'" class="py-3 bg-blue-50 hover:bg-blue-100 text-blue-700 font-medium rounded-xl text-sm transition">$20</button>
+      <button type="button" @click="cashBuffer = '5000'" class="py-3 bg-blue-50 hover:bg-blue-100 text-blue-700 font-medium rounded-xl text-sm transition">$50</button>
+      <button type="button" @click="cashBuffer = '10000'" class="py-3 bg-blue-50 hover:bg-blue-100 text-blue-700 font-medium rounded-xl text-sm transition">$100</button>
+      <button type="button" @click="cashBuffer = (total * 100).toFixed(0)" class="py-3 bg-green-50 hover:bg-green-100 text-green-700 font-medium rounded-xl text-sm transition">Exact</button>
+    </div>
+
+    <div class="grid grid-cols-3 gap-2 mb-4">
+      <button type="button" @click="cashBuffer = (cashBuffer || '') + '1'" class="py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 font-semibold rounded-xl text-lg transition">1</button>
+      <button type="button" @click="cashBuffer = (cashBuffer || '') + '2'" class="py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 font-semibold rounded-xl text-lg transition">2</button>
+      <button type="button" @click="cashBuffer = (cashBuffer || '') + '3'" class="py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 font-semibold rounded-xl text-lg transition">3</button>
+      <button type="button" @click="cashBuffer = (cashBuffer || '') + '4'" class="py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 font-semibold rounded-xl text-lg transition">4</button>
+      <button type="button" @click="cashBuffer = (cashBuffer || '') + '5'" class="py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 font-semibold rounded-xl text-lg transition">5</button>
+      <button type="button" @click="cashBuffer = (cashBuffer || '') + '6'" class="py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 font-semibold rounded-xl text-lg transition">6</button>
+      <button type="button" @click="cashBuffer = (cashBuffer || '') + '7'" class="py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 font-semibold rounded-xl text-lg transition">7</button>
+      <button type="button" @click="cashBuffer = (cashBuffer || '') + '8'" class="py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 font-semibold rounded-xl text-lg transition">8</button>
+      <button type="button" @click="cashBuffer = (cashBuffer || '') + '9'" class="py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 font-semibold rounded-xl text-lg transition">9</button>
+      <button type="button" @click="cashBuffer = '0'" class="py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 font-semibold rounded-xl text-lg transition">C</button>
+      <button type="button" @click="cashBuffer = (cashBuffer || '') + '0'" class="py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 font-semibold rounded-xl text-lg transition">0</button>
+      <button type="button" @click="cashBuffer = (cashBuffer || '').slice(0, -1)" class="py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 font-semibold rounded-xl text-lg transition">&larr;</button>
+    </div>
+
+    <div class="flex space-x-3">
+      <button type="button" @click="showCashModal = false; cashBuffer = '0'" class="flex-1 py-3 text-sm text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl transition">Cancel</button>
+      <button type="button" @click="tendered = parseFloat(cashBuffer || 0) / 100; if (tendered < total) { tenderError = true; showCashModal = false; return; } tenderError = false; showCashModal = false; document.getElementById('cart-json-input').value = JSON.stringify(items); document.getElementById('customer-id-input').value = customerId || ''; document.getElementById('payment-type-input').value = 'CASH'; document.getElementById('return-of-input').value = ''; showChangeModal = true;"
+              class="flex-1 py-3 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition"
+              :class="{'opacity-50 cursor-not-allowed': !cashBuffer || cashBuffer === '0'}">Done</button>
+    </div>
+  </div>
+</div>

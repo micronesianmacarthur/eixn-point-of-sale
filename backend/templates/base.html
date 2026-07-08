@@ -1,0 +1,390 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}{{ business.business_name|default:"EIXN POS" }}{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.12" integrity="sha384-ujb1lZYygJmzgSwoxRggbCHcjc0rB2XoQrxeTUQyRjrOnlCoYta87iKBWq3EsdM2" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.8/dist/cdn.min.js" defer></script>
+    <script src="https://use.fontawesome.com/releases/v6.5.1/js/all.js" crossorigin="anonymous"></script>
+    <style>[x-cloak] { display: none !important; }</style>
+    {% block extra_css %}{% endblock %}
+</head>
+<body class="bg-gray-200" hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+    <div x-data="{ sidebarOpen: false, idleTimer: null, initIdleWatcher() { const reset = () => { clearTimeout(this.idleTimer); this.idleTimer = setTimeout(() => { window.location.href = '/login/'; }, 300000); }; reset(); this.$el.addEventListener('click', reset); this.$el.addEventListener('keydown', reset); this.$el.addEventListener('touchstart', reset); } }"
+         x-init="initIdleWatcher()" class="flex h-screen overflow-hidden">
+        <div x-show="sidebarOpen" @click="sidebarOpen = false" class="fixed inset-0 bg-black bg-opacity-50 z-30 lg:hidden" x-cloak></div>
+        <aside class="w-64 bg-gray-900 text-gray-300 flex-col flex-shrink-0 hidden lg:flex"
+               :class="sidebarOpen ? 'fixed inset-y-0 left-0 z-40 flex' : ''">
+            <div class="p-4 border-b border-gray-700">
+                <a href="{% url 'sales:dashboard' %}" class="flex items-center space-x-2 text-white">
+                    <i class="fas fa-cash-register text-xl"></i>
+                    <span class="text-lg font-semibold">{{ business.business_name|default:"EIXN POS" }}</span>
+                </a>
+            </div>
+            <nav class="flex-1 overflow-y-auto py-2">
+                <div class="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">Core</div>
+                <a href="{% url 'sales:dashboard' %}" class="flex items-center px-4 py-2.5 text-sm hover:bg-gray-700 hover:text-white transition">
+                    <i class="fas fa-tachometer-alt w-6"></i><span>Dashboard</span>
+                </a>
+                <div class="px-4 py-2 mt-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">Transactions</div>
+                <a href="{% url 'sales:checkout' %}" class="flex items-center px-4 py-2.5 text-sm hover:bg-gray-700 hover:text-white transition">
+                    <i class="fas fa-cash-register w-6"></i><span>Sales</span>
+                </a>
+                <a href="{% url 'sales:sale_list' %}" class="flex items-center px-4 py-2.5 text-sm hover:bg-gray-700 hover:text-white transition">
+                    <i class="fas fa-receipt w-6"></i><span>Sales Management</span>
+                </a>
+                <div class="px-4 py-2 mt-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">Management</div>
+                <a href="{% url 'customers:customer_list' %}" class="flex items-center px-4 py-2.5 text-sm hover:bg-gray-700 hover:text-white transition">
+                    <i class="fas fa-users w-6"></i><span>Customers</span>
+                </a>
+                <a href="{% url 'inventory:vendor_list' %}" class="flex items-center px-4 py-2.5 text-sm hover:bg-gray-700 hover:text-white transition">
+                    <i class="fas fa-truck w-6"></i><span>Vendors</span>
+                </a>
+                <a href="{% url 'inventory:product_list' %}" class="flex items-center px-4 py-2.5 text-sm hover:bg-gray-700 hover:text-white transition">
+                    <i class="fas fa-boxes w-6"></i><span>Inventory</span>
+                </a>
+                <a href="{% url 'inventory:purchase_order_list' %}" class="flex items-center px-4 py-2.5 text-sm hover:bg-gray-700 hover:text-white transition">
+                    <i class="fas fa-clipboard-list w-6"></i><span>Purchase Orders</span>
+                </a>
+                {% if request.user.is_manager %}
+                <div class="px-4 py-2 mt-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">System</div>
+                <a href="{% url 'users:user_list' %}" class="flex items-center px-4 py-2.5 text-sm hover:bg-gray-700 hover:text-white transition">
+                    <i class="fas fa-user-cog w-6"></i><span>User Management</span>
+                </a>
+                <a href="{% url 'sales:offline_recovery' %}" class="flex items-center px-4 py-2.5 text-sm hover:bg-gray-700 hover:text-white transition">
+                    <i class="fas fa-cloud-upload-alt w-6"></i><span>Offline Recovery</span>
+                </a>
+                <a href="{% url 'settings' %}" class="flex items-center px-4 py-2.5 text-sm hover:bg-gray-700 hover:text-white transition">
+                    <i class="fas fa-cog w-6"></i><span>System Settings</span>
+                </a>
+                {% endif %}
+                {% if active_session %}
+                <div class="border-t border-gray-700 mt-4 pt-4 px-4">
+                    <div class="text-xs text-gray-500 mb-2">Session #{{ active_session.id }}</div>
+                    <a href="{% url 'sales:close_step1' active_session.pk %}"
+                       class="flex items-center w-full px-4 py-2.5 text-sm text-orange-400 hover:bg-gray-700 hover:text-orange-300 transition rounded">
+                        <i class="fas fa-door-closed w-6"></i><span>Close Session</span>
+                    </a>
+                </div>
+                {% endif %}
+            </nav>
+            <div class="p-4 border-t border-gray-700 text-xs text-gray-500">
+                {{ request.user.get_role_display }}
+            </div>
+        </aside>
+        <main class="flex-1 flex flex-col overflow-hidden">
+            <header class="bg-white shadow-sm border-b border-gray-200 px-4 lg:px-6 py-3 flex items-center justify-between">
+                <div class="flex items-center space-x-3">
+                    <button @click="sidebarOpen = !sidebarOpen" class="lg:hidden text-gray-500 hover:text-gray-700 transition p-1 -ml-1">
+                        <i class="fas fa-bars text-lg"></i>
+                    </button>
+                    <h1 class="text-xl font-semibold text-gray-800">{% block page_title %}{% endblock %}</h1>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <span class="text-sm text-gray-600">{{ request.user.username|upper }}</span>
+                    <form method="post" action="{% url 'users:logout' %}">
+                        {% csrf_token %}
+                        <button type="submit" class="text-sm text-gray-500 hover:text-gray-700 transition">
+                            <i class="fas fa-sign-out-alt"></i> Logout
+                        </button>
+                    </form>
+                </div>
+            </header>
+            <div class="flex-1 overflow-y-auto p-6 pb-20 lg:pb-6">
+                {% if messages %}
+                    {% for message in messages %}
+                        <div class="mb-4 px-4 py-3 rounded-lg text-sm {% if message.tags == 'error' %}bg-red-100 text-red-700 border border-red-200{% elif message.tags == 'warning' %}bg-yellow-100 text-yellow-700 border border-yellow-200{% elif message.tags == 'success' %}bg-green-100 text-green-700 border border-green-200{% else %}bg-blue-100 text-blue-700 border border-blue-200{% endif %} flex justify-between items-center">
+                            <span>{{ message }}</span>
+                            <button onclick="this.parentElement.remove()" class="text-current opacity-50 hover:opacity-100">&times;</button>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+                {% block content %}{% endblock %}
+            </div>
+        </main>
+    </div>
+
+    <nav class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-40 lg:hidden flex items-center justify-around py-1 safe-area-bottom">
+        <a href="{% url 'sales:dashboard' %}" class="flex flex-col items-center px-3 py-1 text-xs text-gray-500 hover:text-blue-600 transition">
+            <i class="fas fa-tachometer-alt text-lg"></i><span class="mt-0.5">Dashboard</span>
+        </a>
+        <a href="{% url 'sales:checkout' %}" class="flex flex-col items-center px-3 py-1 text-xs text-gray-500 hover:text-blue-600 transition">
+            <i class="fas fa-cash-register text-lg"></i><span class="mt-0.5">Sales</span>
+        </a>
+        <a href="{% url 'sales:sale_list' %}" class="flex flex-col items-center px-3 py-1 text-xs text-gray-500 hover:text-blue-600 transition">
+            <i class="fas fa-receipt text-lg"></i><span class="mt-0.5">History</span>
+        </a>
+        <a href="{% url 'customers:customer_list' %}" class="flex flex-col items-center px-3 py-1 text-xs text-gray-500 hover:text-blue-600 transition">
+            <i class="fas fa-users text-lg"></i><span class="mt-0.5">Customers</span>
+        </a>
+    </nav>
+
+    <script>
+        function focusFirst(modalId) {
+            setTimeout(function() {
+                var m = document.getElementById(modalId);
+                if (!m) return;
+                var el = m.querySelector('input:not([type="hidden"]):not([type="email"]), select, textarea');
+                if (el) el.focus();
+            }, 50);
+        }
+        document.addEventListener('input', function(e) {
+            var el = e.target;
+            if (el.tagName === 'INPUT' && (el.type === 'email' || el.type === 'password' || el.type === 'number' || el.type === 'hidden')) return;
+            if (el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA') return;
+            var start = el.selectionStart;
+            var end = el.selectionEnd;
+            var upper = el.value.toUpperCase();
+            if (el.value !== upper) {
+                el.value = upper;
+                el.setSelectionRange(start, end);
+                el.dispatchEvent(new Event('input'));
+            }
+        });
+        function posCart() {
+            return {
+                items: [],
+                customerId: '',
+                customerName: '',
+                customers: [],
+                customerSearch: '',
+                showCustomerModal: false,
+                paymentType: 'CASH',
+                tendered: 0,
+                tenderError: false,
+                creditError: '',
+                showChangeModal: false,
+                showCashModal: false,
+                cashBuffer: '0',
+                pendingWeightProduct: null,
+                weightInput: 1,
+                isReturn: false,
+                returnTxnId: null,
+                bundles: [],
+
+                init() {
+                    const retItems = document.getElementById('return-items-data');
+                    if (retItems) {
+                        this.isReturn = true;
+                        this.returnTxnId = parseInt(document.getElementById('return-txn-id')?.value) || null;
+                        const retCustId = document.getElementById('return-customer-id')?.value;
+                        if (retCustId) {
+                            this.customerId = retCustId;
+                            const cust = this.customers.find(c => c.id == retCustId);
+                            if (cust) this.customerName = cust.name;
+                        }
+                        if (document.getElementById('return-payment-type')?.value) {
+                            this.paymentType = document.getElementById('return-payment-type').value;
+                        }
+                        this.items = JSON.parse(retItems.textContent).map(i => ({
+                            product_id: i.product_id,
+                            product_name: i.product_name,
+                            sku: i.sku || '',
+                            price: i.price,
+                            quantity: i.quantity,
+                            stock: i.stock || 999999,
+                            is_variable_weight: i.is_variable_weight || false,
+                            is_service: i.is_service || false,
+                            cost_price: i.cost_price || 0,
+                            price_charged: i.price_charged || i.price,
+                        }));
+                    }
+                    const el = document.getElementById('customers-data');
+                    if (el) {
+                        this.customers = JSON.parse(el.textContent);
+                        this.customers.forEach(c => {
+                            c.credit_limit = parseFloat(c.credit_limit) || 0;
+                            c.cached_balance = parseFloat(c.cached_balance) || 0;
+                        });
+                    }
+                    const bundlesEl = document.getElementById('bundles-data');
+                    if (bundlesEl) this.bundles = JSON.parse(bundlesEl.textContent);
+                    this.$watch('customerId', (val) => {
+                        if (!val && this.paymentType === 'STORE_CREDIT') {
+                            this.paymentType = 'CASH';
+                        }
+                    });
+                    this.$watch('tendered', () => { this.tenderError = false; });
+                    this.$watch('customerId', () => { this.creditError = ''; });
+                    this.$watch('paymentType', () => { this.creditError = ''; });
+                },
+
+                get total() {
+                    return this.items.reduce((s, i) => s + i.price * i.quantity, 0);
+                },
+
+                get itemCount() {
+                    return this.items.reduce((s, i) => s + i.quantity, 0);
+                },
+
+                get displayAmount() {
+                    const cents = parseInt(this.cashBuffer || '0', 10);
+                    return (cents / 100).toFixed(2);
+                },
+
+                get changeAmount() {
+                    return Math.max(0, this.tendered - this.total);
+                },
+
+                get filteredCustomers() {
+                    const q = this.customerSearch.toLowerCase().trim();
+                    if (!q) return this.customers;
+                    return this.customers.filter(c =>
+                        c.name.toLowerCase().includes(q) ||
+                        (c.phone && c.phone.includes(q))
+                    );
+                },
+
+                selectCustomer(c) {
+                    this.customerId = c.id;
+                    this.customerName = c.name;
+                    this.showCustomerModal = false;
+                    this.customerSearch = '';
+                },
+
+                clearCustomer() {
+                    this.customerId = '';
+                    this.customerName = '';
+                },
+
+                addItem(product) {
+                    if (product.is_variable_weight) {
+                        this.pendingWeightProduct = product;
+                        this.weightInput = 1;
+                        return;
+                    }
+                    const existing = this.items.find(i => i.product_id === product.id);
+                    if (existing) {
+                        existing.quantity = Math.min(existing.quantity + 1, existing.stock || 999999);
+                    } else {
+                        this.items.push({
+                            product_id: product.id,
+                            product_name: product.name,
+                            sku: product.sku || '',
+                            price: product.price,
+                            quantity: 1,
+                            stock: product.stock || 999999,
+                            is_variable_weight: product.is_variable_weight || false,
+                            is_service: product.is_service || false,
+                        });
+                    }
+                },
+
+                addBundle(bundleId) {
+                    const bundle = this.bundles.find(b => b.id === bundleId);
+                    if (!bundle) return;
+                    bundle.items.forEach(item => {
+                        const existing = this.items.find(i => i.product_id === item.product_id);
+                        if (existing) {
+                            existing.quantity = Math.min(existing.quantity + item.quantity, existing.stock || 999999);
+                        } else {
+                            this.items.push({
+                                product_id: item.product_id,
+                                product_name: item.product_name,
+                                sku: item.sku || '',
+                                price: item.price,
+                                quantity: item.quantity,
+                                stock: item.stock || 999999,
+                                is_variable_weight: item.is_variable_weight || false,
+                                is_service: item.is_service || false,
+                                bundle_id: bundle.id,
+                                price_override: item.price,
+                            });
+                        }
+                    });
+                },
+
+                confirmWeight() {
+                    if (!this.pendingWeightProduct) return;
+                    const p = this.pendingWeightProduct;
+                    const qty = parseFloat(this.weightInput) || 1;
+                    this.items.push({
+                        product_id: p.id,
+                        product_name: p.name,
+                        sku: p.sku || '',
+                        price: p.price,
+                        quantity: qty,
+                        stock: 999999,
+                        is_variable_weight: true,
+                        is_service: p.is_service || false,
+                    });
+                    this.pendingWeightProduct = null;
+                    this.weightInput = 1;
+                },
+
+                cancelWeight() {
+                    this.pendingWeightProduct = null;
+                    this.weightInput = 1;
+                },
+
+                updateQuantity(productId, qty) {
+                    const item = this.items.find(i => i.product_id === productId);
+                    if (!item) return;
+                    if (qty <= 0) { this.removeItem(productId); return; }
+                    item.quantity = item.is_variable_weight || item.is_service ? qty : Math.min(qty, item.stock);
+                },
+
+                removeItem(productId) {
+                    const item = this.items.find(i => i.product_id === productId);
+                    if (item && item.bundle_id) {
+                        this.items = this.items.filter(i => i.bundle_id !== item.bundle_id);
+                    } else {
+                        this.items = this.items.filter(i => i.product_id !== productId);
+                    }
+                },
+
+                submitCheckout() {
+                    if (this.items.length === 0) return;
+                    if (this.paymentType === 'STORE_CREDIT') {
+                        const cust = this.customers.find(c => c.id == this.customerId);
+                        if (!cust) return;
+                        if (!cust.is_owner && cust.credit_limit > 0 && (cust.cached_balance + this.total) > cust.credit_limit) {
+                            this.creditError = 'Credit limit exceeded. Available: $' + Math.max(0, cust.credit_limit - cust.cached_balance).toFixed(2);
+                            return;
+                        }
+                    }
+                    if (this.paymentType !== 'STORE_CREDIT' && parseFloat(this.tendered) < this.total) {
+                        this.tenderError = true;
+                        this.$nextTick(() => this.$refs.tenderInput.focus());
+                        return;
+                    }
+                    document.getElementById('cart-json-input').value = JSON.stringify(this.items);
+                    document.getElementById('customer-id-input').value = this.customerId || '';
+                    document.getElementById('payment-type-input').value = this.paymentType || 'CASH';
+                    document.getElementById('return-of-input').value = '';
+                    if (this.paymentType === 'CASH') {
+                        this.cashBuffer = '0';
+                        this.showCashModal = true;
+                        return;
+                    }
+                    window.dispatchEvent(new CustomEvent('pos:checkout'));
+                },
+
+                completeAfterChange() {
+                    this.showChangeModal = false;
+                    this.$nextTick(() => {
+                        document.getElementById('cart-json-input').value = JSON.stringify(this.items);
+                        document.getElementById('customer-id-input').value = this.customerId || '';
+                        document.getElementById('payment-type-input').value = this.paymentType || 'CASH';
+                        document.getElementById('return-of-input').value = '';
+                        window.dispatchEvent(new CustomEvent('pos:checkout'));
+                    });
+                },
+
+                processRefund() {
+                    if (this.items.length === 0) return;
+                    document.getElementById('cart-json-input').value = JSON.stringify(this.items);
+                    document.getElementById('customer-id-input').value = this.customerId || '';
+                    document.getElementById('payment-type-input').value = this.paymentType || 'CASH';
+                    document.getElementById('return-of-input').value = this.returnTxnId;
+                    window.dispatchEvent(new CustomEvent('pos:checkout'));
+                },
+            };
+        }
+    </script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

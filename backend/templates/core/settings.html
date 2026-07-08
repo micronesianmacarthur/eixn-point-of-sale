@@ -1,0 +1,57 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}Settings — {{ block.super }}{% endblock %}
+{% block page_title %}System Settings{% endblock %}
+{% block content %}
+<div class="space-y-6">
+  <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 max-w-lg">
+    <h3 class="text-lg font-semibold text-gray-800 mb-4">Business Information</h3>
+    {% if business %}
+    <dl class="text-sm space-y-2 mb-4">
+      <div class="flex justify-between"><dt class="text-gray-500">Name:</dt><dd class="text-gray-800 font-medium">{{ business.business_name }}</dd></div>
+      <div class="flex justify-between"><dt class="text-gray-500">Phone:</dt><dd class="text-gray-800">{{ business.contact_phone|default:"—" }}</dd></div>
+      <div class="flex justify-between"><dt class="text-gray-500">Email:</dt><dd class="text-gray-800">{{ business.contact_email|default:"—" }}</dd></div>
+      <div class="flex justify-between"><dt class="text-gray-500">Website:</dt><dd class="text-gray-800">{{ business.website|default:"—" }}</dd></div>
+      {% if business.logo %}
+      <div class="flex justify-between items-center"><dt class="text-gray-500">Logo:</dt><dd><img src="{{ business.logo.url }}" alt="" class="h-10"></dd></div>
+      {% endif %}
+    </dl>
+    <a href="{% url 'business_settings' %}" class="inline-flex items-center px-4 py-2 text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition">
+      <i class="fas fa-edit mr-1"></i> Edit Business Info
+    </a>
+    {% else %}
+    <p class="text-sm text-gray-500 mb-4">No business information configured yet.</p>
+    <a href="{% url 'setup' %}" class="inline-flex items-center px-4 py-2 text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition">
+      <i class="fas fa-store mr-1"></i> Set Up Business
+    </a>
+    {% endif %}
+  </div>
+
+  <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 max-w-lg">
+    <h3 class="text-lg font-semibold text-gray-800 mb-4">Markup Rate</h3>
+    <form method="post">
+      {% csrf_token %}
+      <div class="space-y-4">
+        <div>
+          <label for="{{ form.default_markup_rate.id_for_label }}" class="block text-sm font-medium text-gray-700 mb-1">{{ form.default_markup_rate.label }}</label>
+          {{ form.default_markup_rate }}
+          {% if form.default_markup_rate.help_text %}
+          <p class="mt-1 text-xs text-gray-500">{{ form.default_markup_rate.help_text }}</p>
+          {% endif %}
+          {% for error in form.default_markup_rate.errors %}
+          <p class="mt-1 text-xs text-red-600">{{ error }}</p>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="mt-6 flex items-center justify-between">
+        <a href="{% url 'admin:index' %}" class="inline-flex items-center px-4 py-2 text-sm font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition">
+          <i class="fas fa-cog mr-1"></i> Admin Panel
+        </a>
+        <button type="submit" class="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition">
+          <i class="fas fa-save mr-1"></i> Save Settings
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

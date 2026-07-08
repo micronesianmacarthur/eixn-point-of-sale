@@ -1,0 +1,312 @@
+{% extends 'base.html' %}
+{% block title %}Bundle Products — {{ block.super }}{% endblock %}
+{% block page_title %}Bundle Products{% endblock %}
+{% block content %}
+
+<div x-data="bundleActions()">
+
+  <form method="post" action="{% url 'inventory:bundle_create' %}"
+        x-data="{
+          items: [],
+          counter: 0,
+          bundleName: '',
+          addItem(pid, name, sku) {
+            if (this.items.some(i => i.pid === pid)) return;
+            this.items.push({ id: ++this.counter, pid, name, sku, qty: 1 });
+          },
+          removeItem(index) { this.items.splice(index, 1); },
+          injectItems() {
+            const form = this.$el;
+            form.querySelectorAll('input[data-bundle-item]').forEach(el => el.remove());
+            this.items.forEach(item => {
+              const pi = document.createElement('input');
+              pi.type = 'hidden'; pi.name = 'product_' + item.id; pi.value = item.pid;
+              pi.dataset.bundleItem = '';
+              form.appendChild(pi);
+              const qi = document.createElement('input');
+              qi.type = 'hidden'; qi.name = 'qty_' + item.id; qi.value = item.qty;
+              qi.dataset.bundleItem = '';
+              form.appendChild(qi);
+            });
+          },
+        }" @submit.prevent="injectItems(); $el.submit();">
+    {% csrf_token %}
+
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
+      <h2 class="text-lg font-semibold text-gray-800 mb-4">Create New Bundle</h2>
+
+      <div class="mb-4">
+        <label class="block text-sm font-medium text-gray-700 mb-1">Bundle Name</label>
+        <input type="text" name="name" x-model="bundleName" required
+               class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+               placeholder="e.g. Summer Starter Pack">
+      </div>
+
+      <div class="mb-4">
+        <label class="block text-sm font-medium text-gray-700 mb-1">Search Products</label>
+        <input type="text"
+               hx-get="{% url 'inventory:bundle_product_search' %}"
+               hx-trigger="keyup changed delay:300ms"
+               hx-target="#bundle-search-results"
+               hx-indicator="#bundle-search-spinner"
+               name="q"
+               autocomplete="off"
+               class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+               placeholder="Type product name or SKU...">
+        <div id="bundle-search-spinner" class="htmx-indicator text-xs text-gray-400 mt-1">Searching...</div>
+        <div id="bundle-search-results" class="mt-1 bg-white border border-gray-200 rounded-lg shadow-sm max-h-60 overflow-y-auto"></div>
+      </div>
+
+      <template x-if="items.length > 0">
+        <div class="mb-4">
+          <h3 class="text-sm font-semibold text-gray-700 mb-2">Bundle Items</h3>
+          <div class="overflow-x-auto border border-gray-200 rounded-lg">
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="bg-gray-50 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  <th class="px-3 py-2">Product</th>
+                  <th class="px-3 py-2">SKU</th>
+                  <th class="px-3 py-2 w-24">Qty</th>
+                  <th class="px-3 py-2 w-16"></th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-gray-100">
+                <template x-for="(item, index) in items" :key="item.id">
+                  <tr>
+                    <td class="px-3 py-2 text-gray-800" x-text="item.name"></td>
+                    <td class="px-3 py-2 text-xs text-gray-500" x-text="item.sku"></td>
+                    <td class="px-3 py-2">
+                      <input type="number" x-model="item.qty" min="0.001" step="any"
+                             class="w-20 bg-white rounded border border-gray-300 px-2 py-1 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                    </td>
+                    <td class="px-3 py-2">
+                      <button type="button" @click="removeItem(index)"
+                              class="text-red-500 hover:text-red-700 text-lg leading-none">&times;</button>
+                    </td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </template>
+
+      <div class="flex justify-end">
+        <button type="submit"
+                class="px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition font-medium"
+                :disabled="items.length === 0 || !bundleName.trim()"
+                :class="{'opacity-50 cursor-not-allowed': items.length === 0 || !bundleName.trim()}">
+          <i class="fas fa-save mr-1"></i> Save Bundle
+        </button>
+      </div>
+    </div>
+  </form>
+
+  <div class="bg-white rounded-xl shadow-sm border border-gray-200">
+    <div class="px-4 py-3 border-b border-gray-200">
+      <h3 class="text-sm font-semibold text-gray-700">Existing Bundles</h3>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="bg-gray-50 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+            <th class="px-4 py-3">Name</th>
+            <th class="px-4 py-3">Items</th>
+            <th class="px-4 py-3">Status</th>
+            <th class="px-4 py-3">Created</th>
+            <th class="px-4 py-3">Actions</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for b in bundles %}
+          <tr class="hover:bg-gray-50 transition">
+            <td class="px-4 py-3 font-medium text-gray-800">{{ b.name }}</td>
+            <td class="px-4 py-3 text-gray-600">{{ b.items.all|length }}</td>
+            <td class="px-4 py-3">
+              <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full {% if b.is_active %}bg-green-100 text-green-700{% else %}bg-gray-100 text-gray-600{% endif %}">
+                {{ b.is_active|yesno:"Active,Inactive" }}
+              </span>
+            </td>
+            <td class="px-4 py-3 text-gray-500 text-xs">{{ b.created_at|date:"M j, Y" }}</td>
+            <td class="px-4 py-3 flex space-x-2">
+              <button type="button"
+                      @click="editBundle({{ b.id }}, '{{ b.name|escapejs }}', '{{ b.description|escapejs }}', {{ b.is_active|lower }}, [{% for item in b.items.all %}{ pid: {{ item.product.id }}, name: '{{ item.product.name|escapejs }}', sku: '{{ item.product.sku|escapejs }}', qty: {{ item.quantity }} }{% if not forloop.last %},{% endif %}{% endfor %}])"
+                      class="inline-flex items-center px-2.5 py-1.5 text-xs font-medium text-blue-700 bg-blue-100 hover:bg-blue-200 rounded-lg transition">
+                <i class="fas fa-edit mr-1"></i> Edit
+              </button>
+              <button type="button"
+                      @click="openDelete({{ b.id }}, '{{ b.name|escapejs }}')"
+                      class="inline-flex items-center px-2.5 py-1.5 text-xs font-medium text-red-700 bg-red-100 hover:bg-red-200 rounded-lg transition">
+                <i class="fas fa-trash mr-1"></i> Delete
+              </button>
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="5" class="px-4 py-8 text-center text-gray-500">No bundles yet. Create one to get started.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div id="bundleEditModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 hidden">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4">
+      <form method="post" id="bundleEditForm"
+            x-data="{
+              items: [],
+              counter: 0,
+              addItem(pid, name, sku) {
+                if (this.items.some(i => i.pid === pid)) return;
+                this.items.push({ id: ++this.counter, pid, name, sku, qty: 1 });
+              },
+              removeItem(index) { this.items.splice(index, 1); },
+              injectItems() {
+                const form = this.$el;
+                form.querySelectorAll('input[data-bundle-item]').forEach(el => el.remove());
+                this.items.forEach(item => {
+                  const pi = document.createElement('input');
+                  pi.type = 'hidden'; pi.name = 'product_' + item.id; pi.value = item.pid;
+                  pi.dataset.bundleItem = '';
+                  form.appendChild(pi);
+                  const qi = document.createElement('input');
+                  qi.type = 'hidden'; qi.name = 'qty_' + item.id; qi.value = item.qty;
+                  qi.dataset.bundleItem = '';
+                  form.appendChild(qi);
+                });
+              },
+            }" @submit.prevent="injectItems(); $el.submit();">
+        {% csrf_token %}
+        <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+          <h3 id="bundleEditLabel" class="text-lg font-semibold text-gray-800">Edit Bundle</h3>
+          <button type="button" @click="closeEditModal" class="text-gray-400 hover:text-gray-600">&times;</button>
+        </div>
+        <div class="px-6 py-4 space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Name</label>
+            <input type="text" name="name" id="edit-field-name" required
+                   class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Description</label>
+            <textarea name="description" id="edit-field-description" rows="2"
+                      class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"></textarea>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Search Products</label>
+            <input type="text"
+                   hx-get="{% url 'inventory:bundle_product_search' %}"
+                   hx-trigger="keyup changed delay:300ms"
+                   hx-target="#edit-bundle-search-results"
+                   hx-indicator="#edit-bundle-search-spinner"
+                   name="q"
+                   autocomplete="off"
+                   class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                   placeholder="Type product name or SKU...">
+            <div id="edit-bundle-search-spinner" class="htmx-indicator text-xs text-gray-400 mt-1">Searching...</div>
+            <div id="edit-bundle-search-results" class="mt-1 bg-white border border-gray-200 rounded-lg shadow-sm max-h-60 overflow-y-auto"></div>
+          </div>
+          <template x-if="items.length > 0">
+            <div>
+              <h3 class="text-sm font-semibold text-gray-700 mb-2">Bundle Items</h3>
+              <div class="overflow-x-auto border border-gray-200 rounded-lg">
+                <table class="w-full text-sm">
+                  <thead>
+                    <tr class="bg-gray-50 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                      <th class="px-3 py-2">Product</th>
+                      <th class="px-3 py-2">SKU</th>
+                      <th class="px-3 py-2 w-24">Qty</th>
+                      <th class="px-3 py-2 w-16"></th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-gray-100">
+                    <template x-for="(item, index) in items" :key="item.id">
+                      <tr>
+                        <td class="px-3 py-2 text-gray-800" x-text="item.name"></td>
+                        <td class="px-3 py-2 text-xs text-gray-500" x-text="item.sku"></td>
+                        <td class="px-3 py-2">
+                          <input type="number" x-model="item.qty" min="0.001" step="any"
+                                 class="w-20 bg-white rounded border border-gray-300 px-2 py-1 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                        </td>
+                        <td class="px-3 py-2">
+                          <button type="button" @click="removeItem(index)"
+                                  class="text-red-500 hover:text-red-700 text-lg leading-none">&times;</button>
+                        </td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </template>
+          <div class="flex items-center">
+            <input type="checkbox" name="is_active" id="edit-field-is-active" value="true"
+                   class="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+            <label for="edit-field-is-active" class="ml-2 text-sm text-gray-700">Active</label>
+          </div>
+        </div>
+        <div class="px-6 py-4 border-t border-gray-200 flex justify-end space-x-3">
+          <button type="button" @click="closeEditModal" class="px-4 py-2 text-sm text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition">Cancel</button>
+          <button type="submit" class="px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition"
+                  :disabled="items.length === 0"
+                  :class="{'opacity-50 cursor-not-allowed': items.length === 0}">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="bundleDeleteModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 hidden">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4">
+      <form method="post" id="bundleDeleteForm">
+        {% csrf_token %}
+        <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+          <h3 class="text-lg font-semibold text-gray-800">Confirm Delete</h3>
+          <button type="button" @click="closeDeleteModal" class="text-gray-400 hover:text-gray-600">&times;</button>
+        </div>
+        <div class="px-6 py-4">
+          <p class="text-sm text-gray-600">
+            Delete bundle <strong id="bundleDeleteName"></strong>? This cannot be undone.
+          </p>
+        </div>
+        <div class="px-6 py-4 border-t border-gray-200 flex justify-end space-x-3">
+          <button type="button" @click="closeDeleteModal" class="px-4 py-2 text-sm text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition">Cancel</button>
+          <button type="submit" class="px-4 py-2 text-sm text-white bg-red-600 hover:bg-red-700 rounded-lg transition">Delete</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+function bundleActions() {
+  return {
+    editBundle(id, name, description, isActive, items) {
+      const f = document.getElementById('bundleEditForm');
+      f.action = '{% url 'inventory:bundle_edit' pk=0 %}'.replace('/0/', '/' + id + '/');
+      document.getElementById('bundleEditLabel').textContent = 'Edit Bundle';
+      document.getElementById('edit-field-name').value = name;
+      document.getElementById('edit-field-description').value = description;
+      document.getElementById('edit-field-is-active').checked = isActive;
+      const data = Alpine.$data(f);
+      data.counter = 0;
+      data.items = items.map(item => ({ ...item, id: ++data.counter }));
+      document.getElementById('bundleEditModal').classList.remove('hidden');
+    },
+    closeEditModal() {
+      document.getElementById('bundleEditModal').classList.add('hidden');
+      document.getElementById('edit-bundle-search-results').innerHTML = '';
+    },
+    openDelete(id, name) {
+      const f = document.getElementById('bundleDeleteForm');
+      f.action = '{% url 'inventory:bundle_delete' pk=0 %}'.replace('/0/', '/' + id + '/');
+      document.getElementById('bundleDeleteName').textContent = name;
+      document.getElementById('bundleDeleteModal').classList.remove('hidden');
+    },
+    closeDeleteModal() {
+      document.getElementById('bundleDeleteModal').classList.add('hidden');
+    }
+  };
+}
+</script>
+{% endblock %}

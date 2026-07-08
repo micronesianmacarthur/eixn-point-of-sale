@@ -1,0 +1,54 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Login — {{ business.business_name|default:"EIXN POS" }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.8/dist/cdn.min.js"></script>
+    <script src="https://use.fontawesome.com/releases/v6.5.1/js/all.js" crossorigin="anonymous"></script>
+    <style>
+        input[type="text"], input[type="password"] { @apply w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white; }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-blue-600 to-indigo-800 min-h-screen flex items-center justify-center p-4">
+    <div class="w-full max-w-md" x-data="{ pinMode: true }">
+        <div class="text-center mb-8">
+            <i class="fas fa-cash-register text-white text-5xl mb-3"></i>
+            <h1 class="text-3xl font-bold text-white">{{ business.business_name|default:"EIXN POS" }}</h1>
+        </div>
+        <div class="bg-white rounded-xl shadow-2xl p-8">
+            <h2 class="text-xl font-semibold text-gray-800 mb-6 text-center">Sign In</h2>
+            <form method="post">
+                {% csrf_token %}
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-1" for="id_username">Username</label>
+                    <input type="text" name="username" id="id_username" autocomplete="username" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white" required>
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-1" for="id_password">
+                        <span x-show="pinMode">PIN Code</span>
+                        <span x-show="!pinMode">Password</span>
+                    </label>
+                    <input type="password" name="password" id="id_password" autocomplete="current-password" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white" :placeholder="pinMode ? 'Enter your PIN' : 'Enter your password'" required>
+                </div>
+                {% if form.non_field_errors %}
+                    <div class="mb-4 p-3 bg-red-100 text-red-700 rounded-lg text-sm">{{ form.non_field_errors }}</div>
+                {% endif %}
+                <button type="submit" class="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition">
+                    <span x-show="pinMode">Sign In with PIN</span>
+                    <span x-show="!pinMode">Sign In</span>
+                </button>
+                <div class="mt-3 text-center">
+                    <button type="button" @click="pinMode = !pinMode" class="text-sm text-blue-600 hover:text-blue-800 hover:underline">
+                        <span x-show="pinMode">Login with password</span>
+                        <span x-show="!pinMode">Login with PIN</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+        <p class="text-center text-blue-200 text-sm mt-6">{{ business.business_name|default:"EIXN POS" }} &copy; {% now "Y" %}</p>
+    </div>
+</body>
+</html>

@@ -1,0 +1,20 @@
+{% if q %}
+  {% if products %}
+    <div class="divide-y divide-gray-100 max-h-60 overflow-y-auto">
+      {% for p in products %}
+      <a href="{% url 'inventory:repack' %}?parent={{ p.id }}"
+         class="flex items-center px-4 py-3 hover:bg-gray-50 transition">
+        <div class="min-w-0 flex-1">
+          <div class="font-medium text-gray-800 truncate">{{ p.name }}</div>
+          <div class="text-xs text-gray-500">{{ p.sku }} &middot; {{ p.vendor.name }} &middot; stock: {{ p.stock_quantity }}</div>
+        </div>
+        <div class="text-xs font-semibold text-gray-600 ml-3">${{ p.cost_price|floatformat:2 }}</div>
+      </a>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="px-4 py-6 text-center text-gray-500 text-sm">No products found.</div>
+  {% endif %}
+{% else %}
+  <div class="px-4 py-6 text-center text-gray-400 text-sm">Type to search bulk products&hellip;</div>
+{% endif %}

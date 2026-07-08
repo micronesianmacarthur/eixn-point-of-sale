@@ -1,0 +1,19 @@
+{% if q %}
+  {% if products %}
+    {% for p in products %}
+    <button type="button"
+            @click="addItem({{ p.id }}, '{{ p.name|escapejs }}', '{{ p.sku|escapejs }}')"
+            class="w-full text-left px-4 py-3 hover:bg-gray-50 border-b border-gray-100 transition flex items-center justify-between last:border-b-0">
+      <div class="min-w-0 flex-1">
+        <div class="font-medium text-gray-800 truncate">{{ p.name }}</div>
+        <div class="text-xs text-gray-500">{{ p.sku }} &middot; Stock: {{ p.stock_quantity }}</div>
+      </div>
+      <div class="text-sm font-semibold text-gray-800 flex-shrink-0 ml-3">${{ p.retail_price|floatformat:2 }}</div>
+    </button>
+    {% endfor %}
+  {% else %}
+    <div class="px-4 py-6 text-center text-gray-500 text-sm">No products found.</div>
+  {% endif %}
+{% else %}
+  <div class="px-4 py-6 text-center text-gray-400 text-sm">Type to search products...</div>
+{% endif %}

@@ -1,0 +1,19 @@
+[project]
+name = "eixn-pos-backend"
+version = "0.1.0"
+description = "Enterprise Point of Sale — Django Backend"
+requires-python = ">=3.12"
+dependencies = [
+    "django>=5.1,<6",
+    "psycopg>=3.2,<4",
+    "environs>=11,<12",
+    "dj-database-url>=2,<3",
+    "gunicorn>=23,<24",
+    "django-q2>=1.7,<2",
+    "boto3>=1.35,<2",
+    "pillow>=12.2.0",
+    "weasyprint>=65,<66",
+]
+
+[dependency-groups]
+dev = []
