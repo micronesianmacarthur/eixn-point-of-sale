@@ -19,6 +19,9 @@
       <button @click="activeTab = 'customers'" :class="activeTab === 'customers' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'" class="whitespace-nowrap py-3 px-1 border-b-2 text-sm font-medium transition">
         Customers
       </button>
+      <button @click="activeTab = 'reports'" :class="activeTab === 'reports' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'" class="whitespace-nowrap py-3 px-1 border-b-2 text-sm font-medium transition">
+        Reports
+      </button>
       <button @click="activeTab = 'backup'" :class="activeTab === 'backup' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'" class="whitespace-nowrap py-3 px-1 border-b-2 text-sm font-medium transition">
         Backup &amp; Restore
       </button>
@@ -127,6 +130,19 @@
           {% for error in form.default_customer_credit_limit.errors %}
           <p class="mt-1 text-xs text-red-600">{{ error }}</p>
           {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Reports Tab -->
+    <div x-show="activeTab === 'reports'" x-transition>
+      <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <h3 class="text-lg font-semibold text-gray-800 mb-4">
+          <i class="fas fa-chart-line mr-1 text-gray-500"></i> Report Settings
+        </h3>
+        <div class="flex flex-col items-center py-8 text-center">
+          <span class="inline-flex items-center px-3 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-500 mb-4">Coming Soon</span>
+          <p class="text-sm text-gray-500">Report settings will be available in a future version.</p>
         </div>
       </div>
     </div>

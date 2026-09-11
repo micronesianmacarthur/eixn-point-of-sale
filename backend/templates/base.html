@@ -46,6 +46,9 @@
                 <a href="{% url 'inventory:product_list' %}" class="flex items-center px-4 py-2.5 text-sm hover:bg-gray-700 hover:text-white transition">
                     <i class="fas fa-boxes w-6"></i><span>Inventory</span>
                 </a>
+                <a href="{% url 'inventory:inventory_report' %}" class="flex items-center px-4 py-2.5 text-sm hover:bg-gray-700 hover:text-white transition">
+                    <i class="fas fa-clipboard-check w-6"></i><span>Count Sheet</span>
+                </a>
                 <a href="{% url 'inventory:purchase_order_list' %}" class="flex items-center px-4 py-2.5 text-sm hover:bg-gray-700 hover:text-white transition">
                     <i class="fas fa-clipboard-list w-6"></i><span>Purchase Orders</span>
                 </a>
@@ -56,6 +59,9 @@
                 </a>
                 <a href="{% url 'sales:offline_recovery' %}" class="flex items-center px-4 py-2.5 text-sm hover:bg-gray-700 hover:text-white transition">
                     <i class="fas fa-cloud-upload-alt w-6"></i><span>Offline Recovery</span>
+                </a>
+                <a href="{% url 'inventory:adjustment_list' %}" class="flex items-center px-4 py-2.5 text-sm hover:bg-gray-700 hover:text-white transition">
+                    <i class="fas fa-balance-scale w-6"></i><span>Stock Adjustments</span>
                 </a>
                 <a href="{% url 'settings' %}" class="flex items-center px-4 py-2.5 text-sm hover:bg-gray-700 hover:text-white transition">
                     <i class="fas fa-cog w-6"></i><span>System Settings</span>

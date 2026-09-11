@@ -18,6 +18,10 @@ A running log of changes made to the project, organized by date.
   - On-screen receipt page (`/sales/receipt/<id>/`) now shown after every completed sale and return
   - Confirmation below the receipt: "Print Small Receipt" (80mm thermal) or "Print Full Page (Letter)" via `window.print()` with format-specific CSS
   - "New Sale" link returns to checkout
+### Settings Page — Reports Tab
+- Added "Reports" tab to system settings page (`templates/core/settings.html`), placed between Customers and Backup &amp; Restore
+- Alpine `activeTab` state extended (`reports`); panel currently a "Coming Soon" placeholder pending actual report settings
+
 ### Sales Management Page — Fill-Height Scrollable Table
 - `#sale-table` now fills the remaining height of its parent and scrolls internally (`templates/sales/sale_list.html`, `partials/sale_table.html`)
 - Page content wrapped in `md:flex md:flex-col md:h-full` (fills the `flex-1 overflow-y-auto` base wrapper); table is `md:flex-1 md:min-h-0` with an `overflow-auto min-h-0 flex-1` viewport
@@ -110,3 +114,23 @@ A running log of changes made to the project, organized by date.
 ### Customer Detail — Edit Button
 - Added `Edit` button at top-right of customer detail page (`templates/customers/customer_detail.html`), manager-only
 - Replicated the Alpine edit modal from `customer_list.html` (pre-filled with customer values); submits to `/customers/{id}/edit/`
+
+### Inventory Count Sheet + Stock Adjustments (audit trail)
+- New printable **Inventory Count Sheet** at `/inventory/report/` (staff-readable):
+  - Filters: search (name/SKU), vendor, category, and Price/unit toggle (retail or cost)
+  - Print header shows business name, printed date/time, filter scope, and valuation type
+  - Table lists stockable products (excludes services, variable-weight, N/A SERVICE vendor) with `#`, ID, SKU, Description, Price/unit, Price (total), Stock avail, and blank Stock actual for write-ins
+  - "Post Count" and "Adjustments Log" buttons appear for managers; "Print Count Sheet" for everyone
+- Manager-only **Count Entry** page at `/inventory/count/`:
+  - Same table with editable Stock actual inputs (prefilled with system stock) and per-row Reason select (Physical count, Damaged goods, Expired, Found on shelf, Shrinkage, Other)
+  - Note field for count reference; "Preview Changes" shows a summary of just the changed rows with old→new→delta and cost-value impact; editable via anchor
+  - "Post N Adjustment(s)" sends a final POST to `/inventory/count/post/` which atomically applies the count via `inventory.services.post_stock_count`
+- **Audit trail** at `/inventory/adjustments/` (manager-only):
+  - Dated log with Date, Count# (COUNT-id), Product (name+SKU), Previous, Actual, Delta, Reason, Cost value, By; delta and cost cells colored by sign
+  - Summary cards: total adjustments, net units, net cost value; filter by COUNT#
+- **New models** (`inventory/models.py`, migration `0010`):
+  - `InventoryStockCount` — created_by, note, status (DRAFT/POSTED), created_at, posted_at
+  - `InventoryAdjustment` — stock_count (nullable), product, previous_qty, adjusted_qty, delta, reason, cost_price_at_adjustment (snapshot), delta_cost_value, adjusted_by, created_at
+- Atomic posting service (`inventory/services.py:post_stock_count`): uses `select_for_update` to lock products, computes delta and cost snapshot at post time, skips equal rows, deletes draft count when nothing changed, or raises `ValueError` on negative counts
+- Navigation: "Count Sheet" link added to Management sidebar; "Stock Adjustments" added to System sidebar (manager-only); "Count Sheet" and "Stock Adjustments" buttons added to the Inventory list toolbar (manager-only)
+- Tests: report lists only stockable products; cost valuation correct; count/adjustment pages block non-managers; post_stock_count updates stock + writes audit rows; same-values produce no count; negative counts rejected; empty items rejected; POST view updates stock end-to-end

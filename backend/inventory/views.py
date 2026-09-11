@@ -1,6 +1,6 @@
 import csv
 import re
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from core.models import SystemSetting
 import io
 
@@ -10,17 +10,17 @@ from django.db.models import Count, ExpressionWrapper, F, Q, Sum
 from django.db.models import DecimalField as DecimalModelField
 from django.db.models.deletion import ProtectedError
 from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
-from django.shortcuts import get_object_or_404
+from django.shortcuts import get_object_or_404, render
 from django.template.loader import render_to_string
-from django.urls import reverse_lazy
+from django.urls import reverse, reverse_lazy
 from django.views.generic import CreateView, DetailView, FormView, ListView, TemplateView, UpdateView, View
 from django.views.decorators.http import require_POST
 
 from django import forms
 from customers.models import Customer
 from sales.models import Session, TransactionLineItem
-from .models import Bundle, BundleItem, Category, InventoryReceipt, InventoryReceiptItem, Product, PurchaseOrder, PurchaseOrderItem, RecipeIngredient, Vendor
-from .services import bulk_seed_products_csv, execute_repack, generate_sku, receive_inventory
+from .models import Bundle, BundleItem, Category, InventoryAdjustment, InventoryReceipt, InventoryReceiptItem, InventoryStockCount, Product, PurchaseOrder, PurchaseOrderItem, RecipeIngredient, Vendor
+from .services import bulk_seed_products_csv, execute_repack, generate_sku, post_stock_count, receive_inventory
 
 
 class ManagerOrAdminMixin(UserPassesTestMixin):
@@ -95,6 +95,203 @@ class ProductListTableView(LoginRequiredMixin, ListView):
         context['current_category'] = self.request.GET.get('category', '')
         context['current_q'] = self.request.GET.get('q', '')
         context['current_low_stock'] = self.request.GET.get('low_stock', '')
+        return context
+
+
+def _report_products(vendor, category, q):
+    qs = Product.objects.select_related('vendor', 'category') \
+        .exclude(vendor__name__iexact='N/A SERVICE') \
+        .exclude(is_service=True) \
+        .exclude(is_variable_weight=True)
+    if vendor:
+        qs = qs.filter(vendor_id=vendor)
+    if category:
+        qs = qs.filter(category_id=category)
+    if q:
+        qs = qs.filter(Q(name__icontains=q) | Q(sku__icontains=q))
+    return qs.order_by('category__name', 'name')
+
+
+class InventoryReportView(LoginRequiredMixin, TemplateView):
+    template_name = 'inventory/inventory_report.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        price_type = self.request.GET.get('price', 'retail')
+        price_type = price_type if price_type in ('retail', 'cost') else 'retail'
+        unit_attr = 'retail_price' if price_type == 'retail' else 'cost_price'
+
+        rows = []
+        total_value = Decimal('0')
+        for p in _report_products(
+            self.request.GET.get('vendor'),
+            self.request.GET.get('category'),
+            self.request.GET.get('q', '').strip(),
+        ):
+            unit = getattr(p, unit_attr)
+            line_total = (p.stock_quantity * unit).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+            total_value += line_total
+            rows.append({'product': p, 'unit_price': unit, 'line_total': line_total})
+
+        context['rows'] = rows
+        context['total_value'] = total_value
+        context['price_type'] = price_type
+        context['unit_label'] = 'Retail' if price_type == 'retail' else 'Cost'
+        context['vendor_list'] = Vendor.objects.exclude(name__iexact='N/A SERVICE')
+        context['category_list'] = Category.objects.all()
+        context['current_vendor'] = self.request.GET.get('vendor', '')
+        context['current_category'] = self.request.GET.get('category', '')
+        context['current_q'] = self.request.GET.get('q', '')
+        context['current_vendor_name'] = Vendor.objects.get(id=context['current_vendor']).name if context['current_vendor'] else ''
+        context['current_category_name'] = Category.objects.get(id=context['current_category']).name if context['current_category'] else ''
+        context['filter_query'] = self.request.GET.urlencode()
+        return context
+
+
+def _parse_count_rows(product_ids, post):
+    products = {
+        p.id: p for p in Product.objects.select_related('vendor', 'category').filter(id__in=product_ids)
+    }
+    rows = []
+    for pid in product_ids:
+        try:
+            pid_int = int(pid)
+        except (TypeError, ValueError):
+            continue
+        product = products.get(pid_int)
+        if not product:
+            continue
+        raw = post.get(f'qty_{pid_int}', '').strip()
+        reason = post.get(f'reason_{pid_int}', '') or InventoryAdjustment.Reason.PHYSICAL_COUNT
+        counted = None
+        error = None
+        if raw:
+            try:
+                counted = Decimal(raw)
+                if counted < 0:
+                    error = 'Quantity cannot be negative.'
+            except Exception:
+                error = f'Invalid quantity "{raw}".'
+        rows.append({'product': product, 'counted': counted, 'reason': reason, 'error': error})
+    return rows
+
+
+class InventoryCountEntryView(ManagerOrAdminMixin, TemplateView):
+    template_name = 'inventory/count_entry.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['reasons'] = InventoryAdjustment.Reason.choices
+        context['preview_mode'] = self.request.method == 'POST'
+        context['filter_query'] = self.request.GET.urlencode()
+        return context
+
+    def get(self, request, *args, **kwargs):
+        context = self.get_context_data(**kwargs)
+        context['rows'] = [
+            {'product': p, 'counted': None, 'reason': InventoryAdjustment.Reason.PHYSICAL_COUNT, 'error': None}
+            for p in _report_products(
+                request.GET.get('vendor'), request.GET.get('category'), request.GET.get('q', '').strip()
+            )
+        ]
+        return render(request, self.template_name, context)
+
+    def post(self, request):
+        rows = _parse_count_rows(request.POST.getlist('product_id'), request.POST)
+        preview_rows = []
+        total_delta_cost = Decimal('0')
+        for row in rows:
+            if row['error'] or row['counted'] is None:
+                continue
+            previous = Decimal(str(row['product'].stock_quantity))
+            if row['counted'] == previous:
+                continue
+            delta = row['counted'] - previous
+            delta_cost = (delta * Decimal(str(row['product'].cost_price))).quantize(
+                Decimal('0.01'), rounding=ROUND_HALF_UP
+            )
+            total_delta_cost += delta_cost
+            preview_rows.append({
+                **row,
+                'previous': previous,
+                'delta': delta,
+                'delta_cost': delta_cost,
+                'reason_label': dict(InventoryAdjustment.Reason.choices).get(row['reason'], row['reason']),
+            })
+
+        context = self.get_context_data()
+        context['rows'] = rows
+        context['preview_rows'] = preview_rows
+        context['total_delta_cost'] = total_delta_cost
+        context['note'] = request.POST.get('note', '')
+        context['errors'] = [r['error'] for r in rows if r['error']]
+        if not preview_rows and not context['errors']:
+            messages.info(request, 'No changes to preview — counts match system stock.')
+        if context['errors']:
+            messages.error(request, 'Fix the highlighted rows before posting.')
+        return render(request, self.template_name, context)
+
+
+class InventoryCountPostView(ManagerOrAdminMixin, View):
+    def post(self, request):
+        product_ids = request.POST.getlist('product_id')
+        note = (request.POST.get('note', '') or '').strip()
+        parsed = _parse_count_rows(product_ids, request.POST)
+
+        errors = [r['error'] for r in parsed if r['error']]
+        if errors:
+            for err in errors:
+                messages.error(request, err)
+            return HttpResponseRedirect(reverse('inventory:count_entry'))
+
+        items = [
+            {'product_id': r['product'].id, 'counted_qty': r['counted'], 'reason': r['reason']}
+            for r in parsed if r['counted'] is not None
+        ]
+        if not items:
+            messages.info(request, 'No counts were entered.')
+            return HttpResponseRedirect(reverse('inventory:count_entry'))
+
+        try:
+            count, adjustments = post_stock_count(items=items, adjusted_by=request.user, note=note)
+        except ValueError as exc:
+            messages.error(request, str(exc))
+            return HttpResponseRedirect(reverse('inventory:count_entry'))
+
+        if count is None:
+            messages.info(request, 'No changes to post — counts match system stock.')
+            return HttpResponseRedirect(reverse('inventory:count_entry'))
+
+        messages.success(
+            request,
+            f'Stock count COUNT-{count.pk} posted with {len(adjustments)} adjustment(s).'
+        )
+        return HttpResponseRedirect(reverse('inventory:adjustment_list') + f'?count={count.pk}')
+
+
+class InventoryAdjustmentListView(ManagerOrAdminMixin, ListView):
+    model = InventoryAdjustment
+    template_name = 'inventory/adjustment_list.html'
+    context_object_name = 'adjustments'
+    paginate_by = 50
+
+    def get_queryset(self):
+        qs = InventoryAdjustment.objects.select_related(
+            'product', 'product__vendor', 'stock_count', 'adjusted_by'
+        )
+        count_id = self.request.GET.get('count')
+        if count_id:
+            qs = qs.filter(stock_count_id=count_id)
+        return qs.order_by('-created_at', '-id')
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        qs = self.get_queryset()
+        context['adjustment_count'] = qs.count()
+        context['total_units'] = sum((a.delta for a in qs), Decimal('0'))
+        context['total_cost'] = sum((a.delta_cost_value for a in qs), Decimal('0'))
+        context['counts'] = InventoryStockCount.objects.order_by('-created_at')[:20]
+        context['current_count'] = self.request.GET.get('count', '')
         return context
 
 

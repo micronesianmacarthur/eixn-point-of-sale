@@ -1,0 +1,139 @@
+{% extends 'base.html' %}
+{% block title %}Inventory Count Sheet — {{ block.super }}{% endblock %}
+{% block page_title %}Inventory Count Sheet{% endblock %}
+
+{% block extra_css %}
+<style>
+  @media print {
+    .no-print { display: none !important; }
+    aside, header, .lg\:hidden { display: none !important; }
+    main { overflow: visible !important; }
+    main > div { overflow: visible !important; padding: 0 !important; }
+    body { background: #fff !important; }
+    .report-card { box-shadow: none !important; border: 1px solid #000 !important; }
+    .report-table { font-size: 11px; }
+    .report-table thead th { border-bottom: 1px solid #000; }
+    .report-table tbody tr { border-bottom: 1px dotted #999; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="no-print mb-4 bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+  <form method="get" class="flex flex-wrap items-end gap-3">
+    <div>
+      <label class="block text-xs font-medium text-gray-600 mb-1">Search</label>
+      <input type="text" name="q" value="{{ current_q }}" placeholder="Name or SKU..."
+             class="w-48 bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+    </div>
+    <div>
+      <label class="block text-xs font-medium text-gray-600 mb-1">Vendor</label>
+      <select name="vendor" class="bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+        <option value="">All Vendors</option>
+        {% for v in vendor_list %}
+        <option value="{{ v.id }}" {% if current_vendor|stringformat:'s' == v.id|stringformat:'s' %}selected{% endif %}>{{ v.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="block text-xs font-medium text-gray-600 mb-1">Category</label>
+      <select name="category" class="bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+        <option value="">All Categories</option>
+        {% for c in category_list %}
+        <option value="{{ c.id }}" {% if current_category|stringformat:'s' == c.id|stringformat:'s' %}selected{% endif %}>{{ c.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="block text-xs font-medium text-gray-600 mb-1">Price per unit</label>
+      <select name="price" class="bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+        <option value="retail" {% if price_type == 'retail' %}selected{% endif %}>Retail</option>
+        <option value="cost" {% if price_type == 'cost' %}selected{% endif %}>Cost</option>
+      </select>
+    </div>
+    <div class="flex items-end pb-0.5 space-x-2">
+      <button type="submit" class="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition">
+        <i class="fas fa-filter mr-1"></i> Apply
+      </button>
+      <a href="{% url 'inventory:inventory_report' %}" class="px-3 py-2 text-sm font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 hover:text-gray-800 rounded-lg transition" title="Reset filters">
+        <i class="fas fa-undo"></i>
+      </a>
+    </div>
+  </form>
+</div>
+
+<div class="flex flex-wrap items-center justify-between gap-3 no-print mb-4">
+  <div class="flex items-center gap-3">
+    <button onclick="window.print()" class="px-4 py-2 bg-gray-800 hover:bg-gray-900 text-white text-sm font-medium rounded-lg transition">
+      <i class="fas fa-print mr-1"></i> Print Count Sheet
+    </button>
+    {% if request.user.is_manager %}
+    <a href="{% url 'inventory:count_entry' %}{% if filter_query %}?{{ filter_query }}{% endif %}" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition">
+      <i class="fas fa-clipboard-check mr-1"></i> Post Count
+    </a>
+    <a href="{% url 'inventory:adjustment_list' %}" class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition">
+      <i class="fas fa-balance-scale mr-1"></i> Adjustments Log
+    </a>
+    {% endif %}
+  </div>
+  <p class="text-sm text-gray-600">
+    {{ rows|length }} product(s) · {{ unit_label }} value <span class="font-semibold">${{ total_value|floatformat:2 }}</span>
+  </p>
+</div>
+
+<div class="bg-white rounded-xl shadow-sm border border-gray-200 report-card overflow-hidden">
+  <div class="px-5 py-4 border-b border-gray-300">
+    <div class="flex items-start justify-between gap-4">
+      <div>
+        <h2 class="font-semibold text-gray-800">{{ business.business_name|default:"EIXN POS" }}</h2>
+        <p class="text-xs text-gray-500 mt-0.5">Inventory Count Sheet — Printed {% now "Y-m-d H:i" %}</p>
+      </div>
+      <div class="text-right text-xs text-gray-600 space-y-0.5">
+        {% if current_q %}<p>Search: {{ current_q }}</p>{% endif %}
+        {% if current_vendor_name %}<p>Vendor: {{ current_vendor_name }}</p>{% endif %}
+        {% if current_category_name %}<p>Category: {{ current_category_name }}</p>{% endif %}
+        <p>Valuation: {{ unit_label }}</p>
+      </div>
+    </div>
+  </div>
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm report-table">
+      <thead>
+        <tr class="bg-gray-50 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+          <th class="px-4 py-3 w-10">#</th>
+          <th class="px-4 py-3 w-14">ID</th>
+          <th class="px-4 py-3 w-28">SKU</th>
+          <th class="px-4 py-3">Description</th>
+          <th class="px-4 py-3 text-right w-28">Price/unit</th>
+          <th class="px-4 py-3 text-right w-28">Price (total)</th>
+          <th class="px-4 py-3 text-right w-28">Stock avail</th>
+          <th class="px-4 py-3 text-center w-28">Stock actual</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for row in rows %}
+        <tr class="hover:bg-gray-50 transition">
+          <td class="px-4 py-2 text-gray-500">{{ forloop.counter }}</td>
+          <td class="px-4 py-2 text-gray-600">{{ row.product.id }}</td>
+          <td class="px-4 py-2 text-gray-600">{{ row.product.sku }}</td>
+          <td class="px-4 py-2 font-medium text-gray-800">{{ row.product.name }}</td>
+          <td class="px-4 py-2 text-right text-gray-700">{{ row.unit_price|floatformat:2 }}</td>
+          <td class="px-4 py-2 text-right text-gray-700">{{ row.line_total|floatformat:2 }}</td>
+          <td class="px-4 py-2 text-right text-gray-700">{{ row.product.stock_quantity|floatformat:-2 }}</td>
+          <td class="px-4 py-2 text-center text-gray-400">&nbsp;</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="8" class="px-4 py-8 text-center text-gray-500">No products match these filters.</td></tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr class="border-t border-gray-300 font-semibold text-gray-800">
+          <td colspan="5" class="px-4 py-3 text-right">Total value ({{ unit_label }})</td>
+          <td class="px-4 py-3 text-right">${{ total_value|floatformat:2 }}</td>
+          <td colspan="2"></td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+</div>
+{% endblock %}

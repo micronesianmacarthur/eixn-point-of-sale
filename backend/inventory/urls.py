@@ -39,5 +39,9 @@ urlpatterns = [
     path('bundles/<int:pk>/edit/', views.BundleUpdateView.as_view(), name='bundle_edit'),
     path('bundles/<int:pk>/delete/', views.BundleDeleteView.as_view(), name='bundle_delete'),
     path('low-stock/', views.LowStockView.as_view(), name='low_stock'),
+    path('report/', views.InventoryReportView.as_view(), name='inventory_report'),
+    path('count/', views.InventoryCountEntryView.as_view(), name='count_entry'),
+    path('count/post/', views.InventoryCountPostView.as_view(), name='count_post'),
+    path('adjustments/', views.InventoryAdjustmentListView.as_view(), name='adjustment_list'),
     path('create-po/', views.CreateDraftPOView.as_view(), name='create_po'),
 ]
