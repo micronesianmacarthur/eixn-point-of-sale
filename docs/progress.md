@@ -4,6 +4,25 @@ A running log of changes made to the project, organized by date.
 
 ---
 
+## 2026-09-12
+
+### Barcode Scanner + Network Printer + Cash Drawer (SRS §3.2)
+- **Barcode scanner protocol** (`templates/base.html`, global):
+  - Listener captures the F12…ENTER keystroke envelope used by USB scanners regardless of which field has focus
+  - On F12: enters scan mode, buffers subsequent printable characters, ignores modifiers
+  - On ENTER: injects the scanned value into `#product-search`, fires `input` + `keyup` so the HTMX `keyup changed delay:300ms` trigger runs, returns focus to the search box
+  - ESC cancels a partial scan; non-scan typing is untouched
+- **Network printer wiring**:
+  - Added `PRINTER_HOST`, `PRINTER_PORT` (default 9100), `PRINTER_CASH_DRAWER` (default true) to `core/settings.py`, `.env.example`, `.env`, and docker-compose (moved to the qcluster service which executes the task; also added to web)
+  - New task `core/tasks.print_receipt(txn_id)` — loads the Transaction, calls `build_receipt_lines`, streams it (UTF-8 + CRLF) to `PRINTER_HOST:PRINTER_PORT` over TCP with a 5s timeout; gracefully no-ops when no host is configured
+  - `CheckoutCompleteView.post` fires `async_task('core.tasks.print_receipt', txn.id)` after both sale and return completion (django-q2), keeping the responder fast; on-screen receipt remains as fallback
+  - Kept `async_print_receipt(lines, …)` as a legacy wrapper around the same socket logic
+- **Cash drawer kick**: ESC/POS opener `\x1B\x70\x00\x19\xFA` (`CASH_DRAWER_KICK` = `1b700019fa`) is appended to the print job on every sale/return when `PRINTER_CASH_DRAWER` is enabled; testable with `nc -l 9100`
+- Removed dead `build_receipt_lines` import from `sales/views.py` (now only used inside the task)
+- Verified: `manage.py check` clean; sales + inventory test suites (12 tests) pass; `print_receipt(999999)` returns `skipped` when `PRINTER_HOST` is unset (dev default). Pre-existing `users` delete-test failures (4) reproduce identically on main — unrelated to this change
+
+---
+
 ## 2026-09-11
 
 ### Shipping Blockers — Branch `fix/shipping-blockers`
@@ -58,6 +77,26 @@ A running log of changes made to the project, organized by date.
   - `docker/entrypoint.sh` calls `ensure_backup_schedule` after `migrate`
   - Restored the real backup status widget on the dashboard (`sales/partials/backup_status.html`) — was a "Coming Soon" stub
   - `boto3` confirmed already present in `backend/pyproject.toml`
+
+### Inventory Count Sheet + Stock Adjustments (audit trail)
+- New printable **Inventory Count Sheet** at `/inventory/report/` (staff-readable):
+  - Filters: search (name/SKU), vendor, category, and Price/unit toggle (retail or cost)
+  - Print header shows business name, printed date/time, filter scope, and valuation type
+  - Table lists stockable products (excludes services, variable-weight, N/A SERVICE vendor) with `#`, ID, SKU, Description, Price/unit, Price (total), Stock avail, and blank Stock actual for write-ins
+  - "Post Count" and "Adjustments Log" buttons appear for managers; "Print Count Sheet" for everyone
+- Manager-only **Count Entry** page at `/inventory/count/`:
+  - Same table with editable Stock actual inputs (prefilled with system stock) and per-row Reason select (Physical count, Damaged goods, Expired, Found on shelf, Shrinkage, Other)
+  - Note field for count reference; "Preview Changes" shows a summary of just the changed rows with old→new→delta and cost-value impact; editable via anchor
+  - "Post N Adjustment(s)" sends a final POST to `/inventory/count/post/` which atomically applies the count via `inventory.services.post_stock_count`
+- **Audit trail** at `/inventory/adjustments/` (manager-only):
+  - Dated log with Date, Count# (COUNT-id), Product (name+SKU), Previous, Actual, Delta, Reason, Cost value, By; delta and cost cells colored by sign
+  - Summary cards: total adjustments, net units, net cost value; filter by COUNT#
+- **New models** (`inventory/models.py`, migration `0010`):
+  - `InventoryStockCount` — created_by, note, status (DRAFT/POSTED), created_at, posted_at
+  - `InventoryAdjustment` — stock_count (nullable), product, previous_qty, adjusted_qty, delta, reason, cost_price_at_adjustment (snapshot), delta_cost_value, adjusted_by, created_at
+- Atomic posting service (`inventory/services.py:post_stock_count`): uses `select_for_update` to lock products, computes delta and cost snapshot at post time, skips equal rows, deletes draft count when nothing changed, or raises `ValueError` on negative counts
+- Navigation: "Count Sheet" link added to Management sidebar; "Stock Adjustments" added to System sidebar (manager-only); "Count Sheet" and "Stock Adjustments" buttons added to the Inventory list toolbar (manager-only)
+- Tests: report lists only stockable products; cost valuation correct; count/adjustment pages block non-managers; post_stock_count updates stock + writes audit rows; same-values produce no count; negative counts rejected; empty items rejected; POST view updates stock end-to-end
 
 ---
 
@@ -114,23 +153,3 @@ A running log of changes made to the project, organized by date.
 ### Customer Detail — Edit Button
 - Added `Edit` button at top-right of customer detail page (`templates/customers/customer_detail.html`), manager-only
 - Replicated the Alpine edit modal from `customer_list.html` (pre-filled with customer values); submits to `/customers/{id}/edit/`
-
-### Inventory Count Sheet + Stock Adjustments (audit trail)
-- New printable **Inventory Count Sheet** at `/inventory/report/` (staff-readable):
-  - Filters: search (name/SKU), vendor, category, and Price/unit toggle (retail or cost)
-  - Print header shows business name, printed date/time, filter scope, and valuation type
-  - Table lists stockable products (excludes services, variable-weight, N/A SERVICE vendor) with `#`, ID, SKU, Description, Price/unit, Price (total), Stock avail, and blank Stock actual for write-ins
-  - "Post Count" and "Adjustments Log" buttons appear for managers; "Print Count Sheet" for everyone
-- Manager-only **Count Entry** page at `/inventory/count/`:
-  - Same table with editable Stock actual inputs (prefilled with system stock) and per-row Reason select (Physical count, Damaged goods, Expired, Found on shelf, Shrinkage, Other)
-  - Note field for count reference; "Preview Changes" shows a summary of just the changed rows with old→new→delta and cost-value impact; editable via anchor
-  - "Post N Adjustment(s)" sends a final POST to `/inventory/count/post/` which atomically applies the count via `inventory.services.post_stock_count`
-- **Audit trail** at `/inventory/adjustments/` (manager-only):
-  - Dated log with Date, Count# (COUNT-id), Product (name+SKU), Previous, Actual, Delta, Reason, Cost value, By; delta and cost cells colored by sign
-  - Summary cards: total adjustments, net units, net cost value; filter by COUNT#
-- **New models** (`inventory/models.py`, migration `0010`):
-  - `InventoryStockCount` — created_by, note, status (DRAFT/POSTED), created_at, posted_at
-  - `InventoryAdjustment` — stock_count (nullable), product, previous_qty, adjusted_qty, delta, reason, cost_price_at_adjustment (snapshot), delta_cost_value, adjusted_by, created_at
-- Atomic posting service (`inventory/services.py:post_stock_count`): uses `select_for_update` to lock products, computes delta and cost snapshot at post time, skips equal rows, deletes draft count when nothing changed, or raises `ValueError` on negative counts
-- Navigation: "Count Sheet" link added to Management sidebar; "Stock Adjustments" added to System sidebar (manager-only); "Count Sheet" and "Stock Adjustments" buttons added to the Inventory list toolbar (manager-only)
-- Tests: report lists only stockable products; cost valuation correct; count/adjustment pages block non-managers; post_stock_count updates stock + writes audit rows; same-values produce no count; negative counts rejected; empty items rejected; POST view updates stock end-to-end

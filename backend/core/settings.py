@@ -139,6 +139,11 @@ S3_BUCKET_NAME = env.str('S3_BUCKET_NAME', '')
 S3_ENDPOINT_URL = env.str('S3_ENDPOINT_URL', '')
 S3_REGION = env.str('S3_REGION', 'us-east-1')
 
+# Network Thermal Printer (SRS §3.2)
+PRINTER_HOST = env.str('PRINTER_HOST', '')
+PRINTER_PORT = env.int('PRINTER_PORT', 9100)
+PRINTER_CASH_DRAWER = env.bool('PRINTER_CASH_DRAWER', True)
+
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 

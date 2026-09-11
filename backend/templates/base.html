@@ -150,6 +150,57 @@
                 el.dispatchEvent(new Event('input'));
             }
         });
+
+        /* ============================================================
+         * Barcode Scanner Protocol (SRS §3.2)
+         *
+         * USB barcode scanners send a rapid burst of keystrokes
+         * enclosed in F12 (prefix) and ENTER (suffix).  This listener
+         * captures that envelope regardless of which element has focus,
+         * injects the scanned value into the product search input, and
+         * triggers an HTMX keyup so results appear immediately.
+         * ============================================================ */
+        (function() {
+            var scanMode = false;
+            var scanBuffer = '';
+            var SCAN_TIMEOUT_MS = 300;
+
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'F12') {
+                    scanMode = true;
+                    scanBuffer = '';
+                    e.preventDefault();
+                    return;
+                }
+                if (!scanMode) return;
+
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (scanBuffer.length > 0) {
+                        var searchInput = document.getElementById('product-search');
+                        if (searchInput) {
+                            searchInput.value = scanBuffer;
+                            searchInput.dispatchEvent(new Event('input'));
+                            searchInput.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter' }));
+                            searchInput.focus();
+                        }
+                    }
+                    scanMode = false;
+                    scanBuffer = '';
+                    return;
+                }
+                if (e.key === 'Escape') {
+                    scanMode = false;
+                    scanBuffer = '';
+                    return;
+                }
+                if (e.key.length === 1) {
+                    scanBuffer += e.key;
+                    e.preventDefault();
+                }
+            });
+        })();
         function posCart() {
             return {
                 items: [],
