@@ -1,0 +1,181 @@
+{% extends 'base.html' %}
+{% block title %}Post Inventory Count — {{ block.super }}{% endblock %}
+{% block page_title %}Post Inventory Count{% endblock %}
+
+{% block content %}
+{% if not preview_mode %}
+<div class="mb-4 bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+  <form method="get" class="flex flex-wrap items-end gap-3">
+    <div>
+      <label class="block text-xs font-medium text-gray-600 mb-1">Search</label>
+      <input type="text" name="q" value="{{ current_q }}" placeholder="Name or SKU..."
+             class="w-48 bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+    </div>
+    <div>
+      <label class="block text-xs font-medium text-gray-600 mb-1">Vendor</label>
+      <select name="vendor" class="bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+        <option value="">All Vendors</option>
+        {% for v in vendor_list %}
+        <option value="{{ v.id }}" {% if current_vendor|stringformat:'s' == v.id|stringformat:'s' %}selected{% endif %}>{{ v.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="block text-xs font-medium text-gray-600 mb-1">Category</label>
+      <select name="category" class="bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+        <option value="">All Categories</option>
+        {% for c in category_list %}
+        <option value="{{ c.id }}" {% if current_category|stringformat:'s' == c.id|stringformat:'s' %}selected{% endif %}>{{ c.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="flex items-end pb-0.5 space-x-2">
+      <button type="submit" class="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition">
+        <i class="fas fa-filter mr-1"></i> Filter
+      </button>
+      <a href="{% url 'inventory:count_entry' %}" class="px-3 py-2 text-sm font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 hover:text-gray-800 rounded-lg transition" title="Reset filters">
+        <i class="fas fa-undo"></i>
+      </a>
+    </div>
+  </form>
+</div>
+{% else %}
+<div class="mb-4 px-4 py-3 rounded-lg bg-blue-50 border border-blue-200 text-sm text-blue-800 flex flex-wrap items-center gap-2">
+  <i class="fas fa-clipboard-check"></i>
+  <span>Previewing the counts you entered below. Edit any value and press <strong>Preview Changes</strong> again.</span>
+</div>
+{% endif %}
+
+<div class="no-print mb-4 text-sm">
+  <a href="{% url 'inventory:inventory_report' %}{% if filter_query %}?{{ filter_query }}{% endif %}" class="text-blue-600 hover:text-blue-800">
+    <i class="fas fa-arrow-left mr-1"></i>Back to count sheet
+  </a>
+</div>
+
+<form method="post" action="{% url 'inventory:count_entry' %}" id="count-form">
+  {% csrf_token %}
+  <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+    <div class="px-5 py-4 border-b border-gray-200 flex flex-wrap items-center justify-between gap-3">
+      <div>
+        <h2 class="font-semibold text-gray-800">Enter counted quantities</h2>
+        <p class="text-xs text-gray-500 mt-0.5">Stock actual is pre-filled with system stock — change only what differed on the floor.</p>
+      </div>
+      <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition">
+        <i class="fas fa-eye mr-1"></i> Preview Changes
+      </button>
+    </div>
+    <div class="px-5 py-3 border-b border-gray-200">
+      <label class="block text-xs font-medium text-gray-600 mb-1">Note / count reference</label>
+      <input type="text" name="note" value="{{ note|default:'' }}" placeholder="e.g. Weekly floor count — Sept 11"
+             class="w-full max-w-md bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="bg-gray-50 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+            <th class="px-4 py-3 w-10">#</th>
+            <th class="px-4 py-3 w-14">ID</th>
+            <th class="px-4 py-3 w-28">SKU</th>
+            <th class="px-4 py-3">Description</th>
+            <th class="px-4 py-3 text-right">Stock avail</th>
+            <th class="px-4 py-3 text-center">Stock actual</th>
+            <th class="px-4 py-3">Reason</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for row in rows %}
+          <tr class="{% if row.error %}bg-red-50{% endif %}">
+            <td class="px-4 py-2 text-gray-500">{{ forloop.counter }}</td>
+            <td class="px-4 py-2 text-gray-600">{{ row.product.id }}</td>
+            <td class="px-4 py-2 text-gray-600">{{ row.product.sku }}</td>
+            <td class="px-4 py-2 text-gray-800">{{ row.product.name }}</td>
+            <td class="px-4 py-2 text-right text-gray-700">{{ row.product.stock_quantity|floatformat:-2 }}</td>
+            <td class="px-4 py-2 text-center">
+              <input type="hidden" name="product_id" value="{{ row.product.id }}">
+              <input type="text" inputmode="decimal" name="qty_{{ row.product.id }}"
+                     value="{% if row.counted is not None %}{{ row.counted|floatformat:-3 }}{% else %}{{ row.product.stock_quantity|floatformat:-3 }}{% endif %}"
+                     class="w-24 text-center bg-white rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 {% if row.error %}border-red-400 ring-1 ring-red-400{% endif %}">
+              {% if row.error %}<p class="text-xs text-red-600 mt-1">{{ row.error }}</p>{% endif %}
+            </td>
+            <td class="px-4 py-2">
+              <select name="reason_{{ row.product.id }}" class="bg-white rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                {% for value, label in reasons %}
+                <option value="{{ value }}" {% if row.reason == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="7" class="px-4 py-8 text-center text-gray-500">No products match these filters. Print a count sheet first.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if rows %}
+    <div class="px-5 py-4 border-t border-gray-200 flex justify-end">
+      <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition">
+        <i class="fas fa-eye mr-1"></i> Preview Changes
+      </button>
+    </div>
+    {% endif %}
+  </div>
+</form>
+
+{% if preview_rows %}
+<div class="mt-6 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+  <div class="px-5 py-4 border-b border-gray-200">
+    <h2 class="font-semibold text-gray-800"><i class="fas fa-clipboard-check mr-2 text-blue-600"></i>Preview — {{ preview_rows|length }} change(s)</h2>
+    <p class="text-xs text-gray-500 mt-0.5">Confirm to adjust stock. Net cost-value change:
+      <span class="font-semibold {% if total_delta_cost < 0 %}text-red-600{% else %}text-green-600{% endif %}">${{ total_delta_cost|floatformat:2 }}</span>
+    </p>
+  </div>
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="bg-gray-50 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+          <th class="px-4 py-3 w-10">#</th>
+          <th class="px-4 py-3 w-28">SKU</th>
+          <th class="px-4 py-3">Description</th>
+          <th class="px-4 py-3 text-right">Stock (system)</th>
+          <th class="px-4 py-3 text-right">Counted</th>
+          <th class="px-4 py-3 text-right">Delta</th>
+          <th class="px-4 py-3">Reason</th>
+          <th class="px-4 py-3 text-right">Cost value</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for row in preview_rows %}
+        <tr>
+          <td class="px-4 py-2 text-gray-500">{{ forloop.counter }}</td>
+          <td class="px-4 py-2 text-gray-600">{{ row.product.sku }}</td>
+          <td class="px-4 py-2 text-gray-800">{{ row.product.name }}</td>
+          <td class="px-4 py-2 text-right text-gray-700">{{ row.previous|floatformat:-2 }}</td>
+          <td class="px-4 py-2 text-right text-gray-700">{{ row.counted|floatformat:-2 }}</td>
+          <td class="px-4 py-2 text-right font-semibold {% if row.delta < 0 %}text-red-600{% else %}text-green-600{% endif %}">{{ row.delta|floatformat:-2 }}</td>
+          <td class="px-4 py-2 text-gray-600">{{ row.reason_label }}</td>
+          <td class="px-4 py-2 text-right text-gray-700">${{ row.delta_cost|floatformat:2 }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="px-5 py-4 border-t border-gray-200 flex flex-wrap justify-end gap-3">
+    <a href="#count-form" class="px-4 py-2 text-sm text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition">
+      <i class="fas fa-pen mr-1"></i> Edit Counts
+    </a>
+    <form method="post" action="{% url 'inventory:count_post' %}">
+      {% csrf_token %}
+      {% for row in rows %}
+        <input type="hidden" name="product_id" value="{{ row.product.id }}">
+        <input type="hidden" name="qty_{{ row.product.id }}" value="{% if row.counted is not None %}{{ row.counted|floatformat:-3 }}{% else %}{{ row.product.stock_quantity|floatformat:-3 }}{% endif %}">
+        <input type="hidden" name="reason_{{ row.product.id }}" value="{{ row.reason }}">
+      {% endfor %}
+      <input type="hidden" name="note" value="{{ note }}">
+      <button type="submit" class="px-4 py-2 text-sm text-white bg-green-600 hover:bg-green-700 rounded-lg transition">
+        <i class="fas fa-check mr-1"></i> Post {{ preview_rows|length }} Adjustment{{ preview_rows|length|pluralize }}
+      </button>
+    </form>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

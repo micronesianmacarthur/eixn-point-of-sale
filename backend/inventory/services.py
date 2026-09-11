@@ -1,13 +1,14 @@
 import csv
 import io
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from django.db import models, transaction
+from django.utils import timezone
 
 from accounting.services import process_owner_contribution
 from customers.models import Customer
 
-from .models import Category, InventoryReceipt, InventoryReceiptItem, Product, PurchaseOrder, RecipeIngredient, Vendor
+from .models import Category, InventoryAdjustment, InventoryReceipt, InventoryReceiptItem, InventoryStockCount, Product, PurchaseOrder, RecipeIngredient, Vendor
 
 
 @transaction.atomic
@@ -86,6 +87,72 @@ def receive_inventory(
         purchase_order.save(update_fields=['status'])
 
     return receipt
+
+
+@transaction.atomic
+def post_stock_count(*, items, adjusted_by, note=''):
+    """
+    Apply a physical stock count.
+
+    `items` is a list of dicts: {product_id, counted_qty, reason}.
+    Only rows with a counted_qty are considered; rows where the count matches
+    the current system stock are skipped. Stock is updated under lock and an
+    InventoryAdjustment row is written for every change, carrying the delta
+    and its cost value at adjustment time.
+
+    Returns (count, adjustments). If nothing changed, count is None.
+    """
+    payloads = [it for it in items if it.get('counted_qty') is not None]
+    if not payloads:
+        raise ValueError('No counts were provided.')
+
+    product_ids = [it['product_id'] for it in payloads]
+    products = {
+        p.id: p for p in Product.objects.select_for_update().filter(id__in=product_ids)
+    }
+    missing = [pid for pid in product_ids if pid not in products]
+    if missing:
+        raise ValueError(f'Products no longer exist: {missing}')
+
+    count = InventoryStockCount.objects.create(created_by=adjusted_by, note=note or '')
+    adjustments = []
+
+    for it in payloads:
+        product = products[it['product_id']]
+        previous = Decimal(str(product.stock_quantity))
+        adjusted = Decimal(str(it['counted_qty']))
+        if adjusted < 0:
+            raise ValueError(f'Negative count for "{product.name}".')
+        if adjusted == previous:
+            continue
+
+        delta = adjusted - previous
+        cost = Decimal(str(product.cost_price))
+        delta_cost = (delta * cost).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
+        product.stock_quantity = adjusted
+        product.save(update_fields=['stock_quantity'])
+
+        adjustments.append(InventoryAdjustment.objects.create(
+            stock_count=count,
+            product=product,
+            previous_qty=previous,
+            adjusted_qty=adjusted,
+            delta=delta,
+            reason=it.get('reason') or InventoryAdjustment.Reason.PHYSICAL_COUNT,
+            cost_price_at_adjustment=cost,
+            delta_cost_value=delta_cost,
+            adjusted_by=adjusted_by,
+        ))
+
+    if not adjustments:
+        count.delete()
+        return None, []
+
+    count.status = InventoryStockCount.Status.POSTED
+    count.posted_at = timezone.now()
+    count.save(update_fields=['status', 'posted_at'])
+    return count, adjustments
 
 
 BULK_REQUIRED_HEADERS = ["vendor_name", "name"]

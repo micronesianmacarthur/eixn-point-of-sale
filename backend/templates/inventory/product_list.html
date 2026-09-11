@@ -16,6 +16,12 @@
   <a href="{% url 'inventory:category_list' %}" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition">
     <i class="fas fa-tag mr-1"></i> Manage Categories
   </a>
+  <a href="{% url 'inventory:inventory_report' %}" class="px-4 py-2 bg-gray-700 hover:bg-gray-800 text-white text-sm font-medium rounded-lg transition">
+    <i class="fas fa-clipboard-check mr-1"></i> Count Sheet
+  </a>
+  <a href="{% url 'inventory:adjustment_list' %}" class="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-sm font-medium rounded-lg transition">
+    <i class="fas fa-balance-scale mr-1"></i> Stock Adjustments
+  </a>
   <a href="{% url 'inventory:bulk_product_upload' %}" class="px-4 py-2 bg-gray-700 hover:bg-gray-800 text-white text-sm font-medium rounded-lg transition">
     <i class="fas fa-file-csv mr-1"></i> Import Products CSV
   </a>

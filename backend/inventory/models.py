@@ -107,6 +107,45 @@ class InventoryReceiptItem(models.Model):
         return f'{self.product.name} x{self.quantity} @ ${self.cost_price_at_receiving}'
 
 
+class InventoryStockCount(models.Model):
+    class Status(models.TextChoices):
+        DRAFT = 'DRAFT', 'Draft'
+        POSTED = 'POSTED', 'Posted'
+
+    created_by = models.ForeignKey(User, on_delete=models.PROTECT, null=True, related_name='stock_counts')
+    note = models.TextField(blank=True, default='')
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.DRAFT)
+    created_at = models.DateTimeField(auto_now_add=True)
+    posted_at = models.DateTimeField(blank=True, null=True)
+
+    def __str__(self):
+        return f'COUNT-{self.id} ({self.get_status_display()})'
+
+
+class InventoryAdjustment(models.Model):
+    class Reason(models.TextChoices):
+        PHYSICAL_COUNT = 'PHYSICAL_COUNT', 'Physical count'
+        DAMAGED = 'DAMAGED', 'Damaged goods'
+        EXPIRED = 'EXPIRED', 'Expired'
+        FOUND = 'FOUND', 'Found on shelf'
+        SHRINKAGE = 'SHRINKAGE', 'Shrinkage'
+        OTHER = 'OTHER', 'Other'
+
+    stock_count = models.ForeignKey(InventoryStockCount, on_delete=models.PROTECT, null=True, blank=True, related_name='adjustments')
+    product = models.ForeignKey(Product, on_delete=models.PROTECT, related_name='stock_adjustments')
+    previous_qty = models.DecimalField(max_digits=10, decimal_places=3)
+    adjusted_qty = models.DecimalField(max_digits=10, decimal_places=3)
+    delta = models.DecimalField(max_digits=10, decimal_places=3)
+    reason = models.CharField(max_length=20, choices=Reason.choices, default=Reason.PHYSICAL_COUNT)
+    cost_price_at_adjustment = models.DecimalField(max_digits=12, decimal_places=2)
+    delta_cost_value = models.DecimalField(max_digits=14, decimal_places=2)
+    adjusted_by = models.ForeignKey(User, on_delete=models.PROTECT, null=True, related_name='stock_adjustments')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f'{self.product.sku} — {self.get_reason_display()}'
+
+
 class Bundle(models.Model):
     name = models.CharField(max_length=200, verbose_name=_('Name'))
     description = models.TextField(blank=True, verbose_name=_('Description'))
