@@ -15,6 +15,7 @@ urlpatterns = [
     path('checkout/credit-check/', views.CreditCheckView.as_view(), name='credit_check'),
     path('top-products-today/', views.TopProductsTodayView.as_view(), name='top_products_today'),
     path('void/', views.VoidSaleView.as_view(), name='void_sale'),
+    path('receipt/<int:pk>/', views.ReceiptView.as_view(), name='receipt'),
     path('<int:pk>/', views.TransactionDetailView.as_view(), name='transaction_detail'),
     path('<int:pk>/return/', views.ReturnSaleView.as_view(), name='return_sale'),
     path('offline-recovery/', views.OfflineRecoveryView.as_view(), name='offline_recovery'),

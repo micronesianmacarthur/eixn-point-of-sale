@@ -8,6 +8,7 @@ Management command that:
 """
 
 import gzip
+import json
 import os
 import shutil
 import subprocess
@@ -100,18 +101,27 @@ class Command(BaseCommand):
         self.stdout.write(f"Compressed dump: {dump_path} ({self._human_size(file_size)})")
 
         # ── Step 3: Upload to S3 ──────────────────────────────────────
+        uploaded = False
         if no_upload:
             self.stdout.write("--no-upload: skipping S3 upload.")
         else:
             self._upload_to_s3(dump_path, dump_filename)
+            uploaded = True
 
             if not keep_local:
                 dump_path.unlink()
                 self.stdout.write(f"Removed local file {dump_path}")
 
         # ── Step 4: Write last_backup.txt marker ──────────────────────
+        # `uploaded` records whether the snapshot reached S3 so the
+        # dashboard can distinguish "Synced" from "Upload pending".
         marker_path = Path(settings.BASE_DIR) / "last_backup.txt"
-        marker_path.write_text(datetime.now().isoformat())
+        marker = {
+            "last_sync": datetime.now().isoformat(),
+            "uploaded": uploaded,
+            "local_file": dump_filename if not uploaded else None,
+        }
+        marker_path.write_text(json.dumps(marker))
         self.stdout.write(f"Backup marker written: {marker_path}")
 
         self.stdout.write(self.style.SUCCESS("Backup completed successfully."))

@@ -53,8 +53,17 @@ python manage.py migrate --noinput
 
 python manage.py collectstatic --noinput 2>/dev/null || true
 
+# Register the daily cloud-backup django-q schedule (idempotent).
+python manage.py ensure_backup_schedule
+
 # ─────────────────────────────────────────────
-# Launch the web server
+# Launch the application
 # ─────────────────────────────────────────────
 
+# If a command was provided (e.g. `manage.py qcluster`), run it.
+if [ "$#" -gt 0 ]; then
+    exec "$@"
+fi
+
+# Otherwise start the web server.
 exec gunicorn core.wsgi:application --bind 0.0.0.0:8000

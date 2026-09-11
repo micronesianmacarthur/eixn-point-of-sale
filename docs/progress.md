@@ -4,6 +4,41 @@ A running log of changes made to the project, organized by date.
 
 ---
 
+## 2026-09-11
+
+### Shipping Blockers — Branch `fix/shipping-blockers`
+- Fixed Docker build/entrypoint wiring (`docker/Dockerfile`, `docker-compose.yml`, `docker/entrypoint.sh`):
+  - Build context changed from `./backend` to repo root; Dockerfile now `COPY backend/` and copies `docker/entrypoint.sh` to `/usr/local/bin/docker-entrypoint.sh`
+  - Old ENTRYPOINT referenced a `docker-entrypoint.sh` that never existed (containers could not boot)
+  - Entrypoint now execs an overridden command (e.g. `manage.py qcluster`) so web and qcluster services behave correctly
+- Added `.dockerignore` (excludes `.venv`, git, sqlite db, media, secrets from build context)
+- `deploy.sh`: removed `--volumes` from `docker system prune` — was a data-loss risk for the `pgdata` volume
+- Wired receipt display into checkout (`sales/views.py`, new `sales/receipts.py`, `templates/sales/receipt.html`):
+  - New `build_receipt_lines(txn)` formats a 40-column ESC/POS plain-text receipt (for future network-printer use)
+  - On-screen receipt page (`/sales/receipt/<id>/`) now shown after every completed sale and return
+  - Confirmation below the receipt: "Print Small Receipt" (80mm thermal) or "Print Full Page (Letter)" via `window.print()` with format-specific CSS
+  - "New Sale" link returns to checkout
+### Backup Badge — 24h Staleness
+- Added `_backup_is_stale()` (`sales/views.py`): true when the marker timestamp is missing/unparseable or older than 24 hours
+- Badge state priority is now: **Not backed up** (red, stale >24h) &rarr; **Synced** (green) &rarr; **Upload Pending** (yellow) &rarr; **Not Configured** (gray)
+- Stale state also adds a warning line under the badge ("Last backup is over 24 hours old")
+
+### Backup Status — Honest Badge State
+- The dashboard "Synced" badge was triggered by any local dump (`last_backup.txt` marker), even with `--no-upload` and zero S3 config
+- `cloud_backup` now writes a JSON marker `{"last_sync", "uploaded", "local_file"}`; `uploaded` is only true after a successful S3 upload
+- `_read_backup_status()` (`sales/views.py`) parses the JSON and falls back to the legacy plain-text marker
+- Badge states: **Synced** (uploaded) / **Upload Pending** (local-only dump, shows the local filename) / **Not Configured** (no marker)
+- The dashboard "Backup Now" button still creates a local snapshot only (`no_upload=True`) and now honestly reports it as pending
+
+### Cloud Backup Scheduling
+- New `core/tasks.run_cloud_backup()` wrapper around the `cloud_backup` command (no-ops without S3/PostgreSQL)
+- New `core/management/commands/ensure_backup_schedule.py` idempotently creates the daily django-q2 `Schedule` (23:30 local)
+  - `docker/entrypoint.sh` calls `ensure_backup_schedule` after `migrate`
+  - Restored the real backup status widget on the dashboard (`sales/partials/backup_status.html`) — was a "Coming Soon" stub
+  - `boto3` confirmed already present in `backend/pyproject.toml`
+
+---
+
 ## 2026-09-10
 
 ### Dashboard — Online Backup Card

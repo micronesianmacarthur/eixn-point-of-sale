@@ -17,3 +17,7 @@ db.sqlite3
 
 # Uploaded media (logos, etc.)
 backend/media/
+
+# Database backups + status marker (runtime artifacts)
+backend/backups/
+backend/last_backup.txt

@@ -3,14 +3,7 @@
 Features deferred to future versions of eixn-pos.
 
 ## Online Backup (Cloud Backup Sync)
-
-- **Status:** Coming Soon
-- **Planned for:** Future release
-- **Description:** Cloud-based database backup with S3-compatible storage upload. Includes scheduled backups, manual trigger from the dashboard, and sync status visibility.
-- **Implementation notes:** The backend infrastructure (`cloud_backup` management command, `BackupTriggerView`, boto3 integration) already exists but is disabled in the dashboard UI pending further work. The backup status partial (`sales/partials/backup_status.html`) currently shows a "Coming Soon" placeholder.
-- **Date noted:** 2026-09-10
-
----
+> **Status updated 2026-09-11:** no longer deferred — scheduled daily backups and the dashboard widget are now implemented (see `docs/progress.md`).
 
 ## Loan Management Module
 

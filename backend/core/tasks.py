@@ -5,12 +5,29 @@ the HTMX checkout request from hanging on slow I/O.
 """
 
 import logging
+import os
 import socket
 import time
 
 from django.conf import settings
+from django.core.management import call_command
 
 logger = logging.getLogger(__name__)
+
+
+def run_cloud_backup():
+    """
+    Wrapper around the ``cloud_backup`` management command for django-q2
+    scheduling. No-ops when S3 or PostgreSQL are not configured (e.g. dev).
+    """
+    if not getattr(settings, "S3_BUCKET_NAME", ""):
+        logger.warning("run_cloud_backup: S3_BUCKET_NAME not configured — skipping.")
+        return {"status": "skipped", "reason": "S3 not configured"}
+    if not os.environ.get("DATABASE_URL", "").startswith("postgres"):
+        logger.warning("run_cloud_backup: DATABASE_URL is not PostgreSQL — skipping.")
+        return {"status": "skipped", "reason": "not a PostgreSQL database"}
+    call_command("cloud_backup")
+    return {"status": "ok"}
 
 
 def async_print_receipt(lines, printer_host=None, printer_port=None, timeout=5):

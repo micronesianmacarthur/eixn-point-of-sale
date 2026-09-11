@@ -1,5 +1,6 @@
 import json
-from datetime import date, timedelta
+import os
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from decimal import Decimal
@@ -10,7 +11,7 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth import get_user_model
 from django.db.models import Count, F, Sum, Q
 from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
-from django.shortcuts import get_object_or_404, render, redirect
+from django.shortcuts import get_object_or_404, render, redirect, reverse
 from django.template.loader import render_to_string
 from django.urls import reverse_lazy
 from django.utils.decorators import method_decorator
@@ -18,6 +19,7 @@ from django.views.generic import CreateView, DetailView, ListView, TemplateView,
 
 from .decorators import require_open_session
 
+from core.models import BusinessInfo
 from customers.models import Customer
 from inventory.models import Bundle, Product
 from .analytics import (
@@ -31,6 +33,7 @@ from .analytics import (
 )
 from .cash_count import CURRENCY_DEFS, calculate_totals, calculate_removal
 from .models import Session, Transaction, TransactionLineItem
+from .receipts import build_receipt_lines
 from .services import batch_offline_recovery, close_session, process_checkout, process_return, void_transaction
 
 
@@ -540,6 +543,7 @@ class CheckoutCompleteView(LoginRequiredMixin, View):
                     operator_user=request.user,
                 )
                 messages.success(request, f'Return #{txn.id} for original transaction #{return_of}.')
+                return HttpResponseRedirect(reverse('sales:receipt', kwargs={'pk': txn.id}))
             else:
                 active_session = Session.objects.filter(status=Session.Status.OPEN).first()
                 if not active_session:
@@ -549,12 +553,34 @@ class CheckoutCompleteView(LoginRequiredMixin, View):
                 payments = [{'amount': sum(Decimal(str(i['price'])) * i['quantity'] for i in cart), 'payment_type': payment_type}]
                 txn = process_checkout(session_id=active_session.id, items=items, payments=payments, customer_id=customer_id or None, operator_user=request.user)
                 messages.success(request, f'Transaction #{txn.id} completed.')
+                return HttpResponseRedirect(reverse('sales:receipt', kwargs={'pk': txn.id}))
         except (ValueError, Transaction.DoesNotExist) as e:
             messages.error(request, str(e))
         return HttpResponseRedirect(reverse_lazy('sales:checkout'))
 
     def get(self, request):
         return self.post(request)
+
+
+class ReceiptView(LoginRequiredMixin, DetailView):
+    model = Transaction
+    template_name = 'sales/receipt.html'
+    context_object_name = 'txn'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        items = []
+        for item in self.object.items.select_related('product').all():
+            items.append({
+                'name': item.product.name if item.product else 'Item',
+                'quantity': item.quantity_sold,
+                'price': item.price_at_sale,
+                'line_total': item.quantity_sold * item.price_at_sale,
+            })
+        context['line_items'] = items
+        context['business'] = BusinessInfo.objects.first()
+        context['change'] = max(Decimal('0.00'), self.object.payment_amount - self.object.total_amount)
+        return context
 
 
 class TopProductsTodayView(LoginRequiredMixin, View):
@@ -663,18 +689,39 @@ class OfflineRecoveryView(LoginRequiredMixin, TemplateView):
         return HttpResponseRedirect(reverse_lazy('sales:offline_recovery'))
 
 
+def _backup_is_stale(last_sync):
+    """True when the marker timestamp is missing/unparseable or >24h old."""
+    try:
+        last_dt = datetime.fromisoformat(str(last_sync))
+        return (datetime.now() - last_dt).total_seconds() > 86400
+    except Exception:
+        return True
+
+
 def _read_backup_status():
     """Read the last_backup.txt marker file and return a dict or None."""
-    import os
     marker = os.path.join(settings.BASE_DIR, 'last_backup.txt')
-    if os.path.exists(marker):
+    if not os.path.exists(marker):
+        return None
+    try:
+        with open(marker) as f:
+            data = json.load(f)
+        last_sync = data.get('last_sync')
+        return {
+            'last_sync': last_sync,
+            'uploaded': bool(data.get('uploaded')),
+            'local_file': data.get('local_file'),
+            'stale': _backup_is_stale(last_sync),
+        }
+    except Exception:
+        # Legacy plain-text marker (timestamp only) — treat as local snapshot.
         try:
             with open(marker) as f:
                 ts = f.read().strip()
-            return {'last_sync': ts, 'status': 'OK'}
+            return {'last_sync': ts, 'uploaded': False, 'local_file': None,
+                    'stale': _backup_is_stale(ts)}
         except Exception:
             return None
-    return None
 
 
 class BackupTriggerView(LoginRequiredMixin, View):

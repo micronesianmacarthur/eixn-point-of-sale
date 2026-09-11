@@ -1,9 +1,33 @@
 <div class="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
   <h2 class="font-semibold text-gray-800"><i class="fas fa-cloud-upload-alt mr-2 text-blue-500"></i>Cloud Backup Sync</h2>
-  <span class="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full bg-gray-100 text-gray-500">
-    <i class="fas fa-circle mr-1" style="font-size: 6px;"></i>Coming Soon
+  <span class="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full
+    {% if backup_status.stale %}bg-red-100 text-red-700
+    {% elif backup_status.uploaded %}bg-green-100 text-green-700
+    {% elif backup_status %}bg-yellow-100 text-yellow-700
+    {% else %}bg-gray-100 text-gray-500{% endif %}">
+    <i class="fas fa-circle mr-1" style="font-size: 6px;"></i>
+    {% if backup_status.stale %}Not backed up
+    {% elif backup_status.uploaded %}Synced
+    {% elif backup_status %}Upload Pending
+    {% else %}Not Configured{% endif %}
   </span>
 </div>
 <div class="p-5 text-sm text-gray-600">
-  <p>Online backup will be available in a future version.</p>
+  {% if backup_status %}
+    <p>Last sync: <strong>{{ backup_status.last_sync }}</strong></p>
+    {% if backup_status.stale %}
+      <p class="mt-1 text-red-700"><i class="fas fa-exclamation-triangle mr-1"></i>Last backup is over 24 hours old &mdash; run a backup immediately.</p>
+    {% elif backup_status.local_file %}
+      <p class="mt-1 text-yellow-700"><i class="fas fa-file-archive mr-1"></i>Local snapshot only (<code>{{ backup_status.local_file }}</code>) &mdash; awaiting S3 upload.</p>
+    {% endif %}
+  {% else %}
+    <p>No backup schedule configured.</p>
+  {% endif %}
+  <button type="button"
+          hx-post="{% url 'sales:backup_trigger' %}"
+          hx-target="#backup-card"
+          hx-swap="innerHTML"
+          class="mt-3 inline-flex items-center px-3 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition">
+    <i class="fas fa-play mr-1"></i> Backup Now
+  </button>
 </div>
