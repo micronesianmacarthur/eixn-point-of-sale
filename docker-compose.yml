@@ -26,6 +26,9 @@ services:
     environment:
       - DATABASE_URL=postgres://eixn:eixn@db:5432/eixn_pos
       - PYTHONUNBUFFERED=1
+      - PRINTER_HOST=${PRINTER_HOST:-}
+      - PRINTER_PORT=${PRINTER_PORT:-9100}
+      - PRINTER_CASH_DRAWER=${PRINTER_CASH_DRAWER:-true}
 
   web:
     build:

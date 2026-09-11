@@ -17,6 +17,8 @@ from django.urls import reverse_lazy
 from django.utils.decorators import method_decorator
 from django.views.generic import CreateView, DetailView, ListView, TemplateView, UpdateView, View
 
+from django_q.tasks import async_task
+
 from .decorators import require_open_session
 
 from core.models import BusinessInfo
@@ -33,7 +35,6 @@ from .analytics import (
 )
 from .cash_count import CURRENCY_DEFS, calculate_totals, calculate_removal
 from .models import Session, Transaction, TransactionLineItem
-from .receipts import build_receipt_lines
 from .services import batch_offline_recovery, close_session, process_checkout, process_return, void_transaction
 
 
@@ -543,6 +544,7 @@ class CheckoutCompleteView(LoginRequiredMixin, View):
                     operator_user=request.user,
                 )
                 messages.success(request, f'Return #{txn.id} for original transaction #{return_of}.')
+                async_task('core.tasks.print_receipt', txn.id)
                 return HttpResponseRedirect(reverse('sales:receipt', kwargs={'pk': txn.id}))
             else:
                 active_session = Session.objects.filter(status=Session.Status.OPEN).first()
@@ -553,6 +555,7 @@ class CheckoutCompleteView(LoginRequiredMixin, View):
                 payments = [{'amount': sum(Decimal(str(i['price'])) * i['quantity'] for i in cart), 'payment_type': payment_type}]
                 txn = process_checkout(session_id=active_session.id, items=items, payments=payments, customer_id=customer_id or None, operator_user=request.user)
                 messages.success(request, f'Transaction #{txn.id} completed.')
+                async_task('core.tasks.print_receipt', txn.id)
                 return HttpResponseRedirect(reverse('sales:receipt', kwargs={'pk': txn.id}))
         except (ValueError, Transaction.DoesNotExist) as e:
             messages.error(request, str(e))
