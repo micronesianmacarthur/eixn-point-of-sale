@@ -583,11 +583,35 @@ class ReceiptView(LoginRequiredMixin, DetailView):
         return context
 
 
-class TopProductsTodayView(LoginRequiredMixin, View):
+class TopProductsView(LoginRequiredMixin, View):
+    RANGES = {
+        'today': lambda today: (today, today),
+        'week': lambda today: (today - timedelta(days=6), today),
+        'month': lambda today: (today - timedelta(days=29), today),
+        'all': lambda today: (None, None),
+    }
+    RANGE_LABELS = {
+        'today': 'Today',
+        'week': 'Last 7 Days',
+        'month': 'Last 30 Days',
+        'all': 'All Time',
+    }
+    RANGE_ORDER = ['today', 'week', 'month', 'all']
+
     def get(self, request):
+        range_key = request.GET.get('range', 'today')
+        if range_key not in self.RANGES:
+            range_key = 'today'
         today = date.today()
-        products = get_top_products(today, today, limit=10)
-        html = render_to_string('sales/partials/top_products.html', {'products': products}, request=request)
+        start, end = self.RANGES[range_key](today)
+        products = get_top_products(start, end, limit=10)
+        context = {
+            'products': products,
+            'range': range_key,
+            'range_label': self.RANGE_LABELS[range_key],
+            'ranges': [(key, self.RANGE_LABELS[key]) for key in self.RANGE_ORDER],
+        }
+        html = render_to_string('sales/partials/top_products.html', context, request=request)
         return HttpResponse(html)
 
 

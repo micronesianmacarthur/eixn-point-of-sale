@@ -163,7 +163,7 @@
     <div class="px-5 py-4 border-b border-gray-200">
       <h2 class="font-semibold text-gray-800"><i class="fas fa-crown mr-2 text-yellow-500"></i>Top Products Today</h2>
     </div>
-    <div id="top-products-panel" hx-get="{% url 'sales:top_products_today' %}" hx-trigger="load" hx-swap="innerHTML">
+    <div id="top-products-panel" hx-get="{% url 'sales:top_products' %}" hx-trigger="load" hx-swap="innerHTML">
       <div class="p-4 text-center text-gray-400 text-sm"><i class="fas fa-spinner fa-spin mr-2"></i>Loading...</div>
     </div>
   </div>

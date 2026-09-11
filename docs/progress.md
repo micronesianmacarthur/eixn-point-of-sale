@@ -18,6 +18,17 @@ A running log of changes made to the project, organized by date.
   - On-screen receipt page (`/sales/receipt/<id>/`) now shown after every completed sale and return
   - Confirmation below the receipt: "Print Small Receipt" (80mm thermal) or "Print Full Page (Letter)" via `window.print()` with format-specific CSS
   - "New Sale" link returns to checkout
+### Top Items Panel — Fixed Height + Scroll
+- Panel body now capped at ~4 item rows (`max-h-60`) with `overflow-y-auto` scrolling
+- Column headers stay pinned via `sticky top-0` while scrolling within the panel
+
+### Top Items Panel — Time Range Selector
+- `TopProductsView` (`sales/views.py`) replaces `TopProductsTodayView`; accepts `?range=today|week|month|all` (unknown values fall back to `today`)
+- Week = last 7 days, Month = last 30 days, All = no date filter
+- `get_top_products()` (`sales/analytics.py`) now treats `start_date`/`end_date` as optional (skips the date filter when `None`)
+- `top_products.html` partial gained a segmented Today / Last 7 Days / Last 30 Days / All Time control; buttons re-fetch the panel via HTMX (`hx-target="#top-products-panel"`)
+- Endpoint renamed `top_products_today` → `top_products`; `dashboard.html` updated accordingly
+
 ### Backup Badge — 24h Staleness
 - Added `_backup_is_stale()` (`sales/views.py`): true when the marker timestamp is missing/unparseable or older than 24 hours
 - Badge state priority is now: **Not backed up** (red, stale >24h) &rarr; **Synced** (green) &rarr; **Upload Pending** (yellow) &rarr; **Not Configured** (gray)

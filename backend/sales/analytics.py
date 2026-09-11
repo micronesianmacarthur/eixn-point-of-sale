@@ -39,13 +39,14 @@ def get_sales_by_clerk(start_date, end_date, limit=10):
     )
 
 
-def get_top_products(start_date, end_date, limit=10):
+def get_top_products(start_date=None, end_date=None, limit=10):
+    filters = {"transaction__status__in": [Transaction.Status.POSTED]}
+    if start_date:
+        filters["transaction__transaction_date__date__gte"] = start_date
+    if end_date:
+        filters["transaction__transaction_date__date__lte"] = end_date
     return (
-        TransactionLineItem.objects.filter(
-            transaction__transaction_date__date__gte=start_date,
-            transaction__transaction_date__date__lte=end_date,
-            transaction__status__in=[Transaction.Status.POSTED],
-        )
+        TransactionLineItem.objects.filter(**filters)
         .values('product__name', 'product__sku')
         .annotate(
             total_qty=Sum('quantity_sold'),
