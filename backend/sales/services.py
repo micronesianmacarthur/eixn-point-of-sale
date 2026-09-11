@@ -77,8 +77,9 @@ def process_checkout(*, session_id, items, payments, customer_id=None, operator_
             if projected > customer.credit_limit:
                 available = max(Decimal('0.00'), customer.credit_limit - customer.cached_balance)
                 raise ValueError(f'Store credit denied — projected balance ${projected:.2f} exceeds credit limit ${customer.credit_limit:.2f}. Only ${available:.2f} available.')
-        customer.cached_balance += total
-        customer.save(update_fields=['cached_balance'])
+        if payment_type == Transaction.PaymentType.STORE_CREDIT:
+            customer.cached_balance += total
+            customer.save(update_fields=['cached_balance'])
         award_loyalty_points(customer_id=customer.id, total=total, payment_type=payment_type)
 
     write_ledger_entry(
@@ -112,7 +113,7 @@ def void_transaction(*, txn_id, operator_user=None):
                 stock_quantity=models.F('stock_quantity') + item.quantity_sold
             )
 
-    if txn.customer:
+    if txn.customer and txn.payment_type == Transaction.PaymentType.STORE_CREDIT:
         Customer.objects.filter(id=txn.customer_id).update(
             cached_balance=models.F('cached_balance') - txn.total_amount
         )
@@ -162,7 +163,7 @@ def process_return(*, original_txn_id, return_items, refund_amount, refund_type,
             stock_quantity=models.F('stock_quantity') + item['quantity']
         )
 
-    if original_txn.customer:
+    if original_txn.customer and original_txn.payment_type == Transaction.PaymentType.STORE_CREDIT:
         Customer.objects.filter(id=original_txn.customer_id).update(
             cached_balance=models.F('cached_balance') - refund_amount
         )
@@ -312,7 +313,7 @@ def batch_offline_recovery(*, rows, operator_user=None):
             )
             deduct_composite(item['product_id'], Decimal(str(item['quantity'])))
 
-        if txn.customer:
+        if txn.customer and txn.payment_type == Transaction.PaymentType.STORE_CREDIT:
             Customer.objects.filter(id=txn.customer_id).update(
                 cached_balance=models.F('cached_balance') + txn.total_amount
             )

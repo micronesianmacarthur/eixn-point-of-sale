@@ -19,7 +19,10 @@ class Command(BaseCommand):
 
         for customer in customers:
             expected = (
-                Transaction.objects.filter(customer=customer)
+                Transaction.objects.filter(
+                    customer=customer,
+                    payment_type=Transaction.PaymentType.STORE_CREDIT,
+                )
                 .exclude(status=Transaction.Status.VOIDED)
                 .aggregate(total=Coalesce(Sum('total_amount'), Value(0, output_field=DecimalField())))['total']
             )

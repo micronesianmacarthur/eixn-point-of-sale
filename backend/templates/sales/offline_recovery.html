@@ -3,8 +3,10 @@
 {% block page_title %}Offline Recovery{% endblock %}
 {% block content %}
 {% if request.user.is_manager %}
-<div x-data="offlineGrid()" class="max-w-5xl">
-  <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-4">
+{{ products_json|json_script:"products-data" }}
+<div x-data="offlineGrid()">
+  <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,52rem)_minmax(0,1fr)] gap-6 items-start">
+    <div class="min-w-0 bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-4">
     <div class="flex items-center justify-between mb-3">
       <p class="text-sm text-gray-600">Enter offline transactions row by row. Use <kbd class="px-1.5 py-0.5 bg-gray-100 border border-gray-300 rounded text-xs font-mono">Tab</kbd> / <kbd class="px-1.5 py-0.5 bg-gray-100 border border-gray-300 rounded text-xs font-mono">Shift+Tab</kbd> to navigate.</p>
       <div class="flex space-x-2">
@@ -18,7 +20,7 @@
       </div>
     </div>
 
-    <div class="overflow-x-auto max-h-96 overflow-y-auto border border-gray-200 rounded-lg">
+    <div class="overflow-x-auto max-h-96 overflow-y-auto border border-gray-200 rounded-lg w-full">
       <table id="offline-grid-table" class="w-full text-sm">
         <thead>
           <tr class="bg-gray-50 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider sticky top-0">
@@ -90,6 +92,33 @@
       {% csrf_token %}
       <textarea name="body" id="offline-payload"></textarea>
     </form>
+    </div>
+
+    <div class="min-w-0 bg-white rounded-xl shadow-sm border border-gray-200 p-4 xl:sticky xl:top-4">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-sm font-semibold text-gray-800">
+          <i class="fas fa-box mr-1 text-gray-500"></i> Product Lookup
+        </h3>
+        <span class="text-xs text-gray-400" x-text="filteredProducts.length + ' item' + (filteredProducts.length === 1 ? '' : 's')"></span>
+      </div>
+      <input type="text" x-model="productSearch"
+             placeholder="Search items..."
+             class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 mb-3">
+      <ul class="divide-y divide-gray-100 max-h-96 overflow-y-auto border border-gray-200 rounded-lg">
+        <template x-for="p in filteredProducts" :key="p.id">
+          <li class="flex items-center justify-between px-3 py-2 hover:bg-blue-50 transition cursor-pointer" @click="appendProduct(p.id)">
+            <span class="text-sm text-gray-800 flex items-center gap-2">
+              <span x-text="p.sku || '—'" class="text-[10px] font-mono text-gray-400 uppercase"></span>
+              <span x-text="p.name"></span>
+            </span>
+            <span class="text-xs font-mono text-gray-400" x-text="p.id"></span>
+          </li>
+        </template>
+        <template x-if="filteredProducts.length === 0">
+          <li class="px-3 py-6 text-center text-gray-400 text-sm">No items found.</li>
+        </template>
+      </ul>
+    </div>
   </div>
 </div>
 
@@ -98,6 +127,23 @@ function offlineGrid() {
   return {
     rows: [],
     submitError: '',
+    products: JSON.parse(document.getElementById('products-data').textContent),
+    productSearch: '',
+
+    get filteredProducts() {
+      const q = this.productSearch.toLowerCase();
+      return this.products.filter(p =>
+        !q || p.name.toLowerCase().includes(q) || (p.sku || '').toLowerCase().includes(q)
+      );
+    },
+
+    appendProduct(id) {
+      const last = this.rows[this.rows.length - 1];
+      if (!last) return;
+      const existing = last.items_raw.trim();
+      last.items_raw = existing ? `${existing}, ${id}:1` : `${id}:1`;
+      this.validateRow(this.rows.length - 1);
+    },
 
     addRow() {
       this.rows.push({

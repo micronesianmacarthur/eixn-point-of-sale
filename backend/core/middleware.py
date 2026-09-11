@@ -4,7 +4,25 @@ from django.http import HttpResponseRedirect
 from django.urls import reverse
 from django.utils import timezone
 
-from .models import BusinessInfo
+from .models import BusinessInfo, SystemSetting
+
+DEFAULT_TIMEOUT = 300
+MIN_TIMEOUT = 60
+MAX_TIMEOUT = 1800
+
+
+def get_idle_timeout():
+    enabled_row = SystemSetting.objects.filter(key='SESSION_IDLE_TIMEOUT_ENABLED').first()
+    if enabled_row and enabled_row.value == 'false':
+        return 0
+
+    timeout_row = SystemSetting.objects.filter(key='SESSION_IDLE_TIMEOUT').first()
+    try:
+        timeout = int(timeout_row.value) if timeout_row else DEFAULT_TIMEOUT
+    except (ValueError, TypeError):
+        timeout = DEFAULT_TIMEOUT
+
+    return max(MIN_TIMEOUT, min(MAX_TIMEOUT, timeout))
 
 
 class IdleTimeoutMiddleware:
@@ -13,15 +31,16 @@ class IdleTimeoutMiddleware:
 
     def __call__(self, request):
         if request.user.is_authenticated:
-            last = request.session.get('last_activity')
-            now = timezone.now().timestamp()
-            timeout = settings.SESSION_IDLE_TIMEOUT
+            timeout = get_idle_timeout()
+            if timeout > 0:
+                last = request.session.get('last_activity')
+                now = timezone.now().timestamp()
 
-            if last is not None and (now - last) > timeout:
-                logout(request)
-                return HttpResponseRedirect(reverse('users:login'))
+                if last is not None and (now - last) > timeout:
+                    logout(request)
+                    return HttpResponseRedirect(reverse('users:login'))
 
-            request.session['last_activity'] = now
+                request.session['last_activity'] = now
 
         return self.get_response(request)
 

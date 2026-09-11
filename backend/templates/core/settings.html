@@ -3,35 +3,58 @@
 {% block title %}Settings — {{ block.super }}{% endblock %}
 {% block page_title %}System Settings{% endblock %}
 {% block content %}
-<div class="space-y-6">
-  <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 max-w-lg">
-    <h3 class="text-lg font-semibold text-gray-800 mb-4">Business Information</h3>
-    {% if business %}
-    <dl class="text-sm space-y-2 mb-4">
-      <div class="flex justify-between"><dt class="text-gray-500">Name:</dt><dd class="text-gray-800 font-medium">{{ business.business_name }}</dd></div>
-      <div class="flex justify-between"><dt class="text-gray-500">Phone:</dt><dd class="text-gray-800">{{ business.contact_phone|default:"—" }}</dd></div>
-      <div class="flex justify-between"><dt class="text-gray-500">Email:</dt><dd class="text-gray-800">{{ business.contact_email|default:"—" }}</dd></div>
-      <div class="flex justify-between"><dt class="text-gray-500">Website:</dt><dd class="text-gray-800">{{ business.website|default:"—" }}</dd></div>
-      {% if business.logo %}
-      <div class="flex justify-between items-center"><dt class="text-gray-500">Logo:</dt><dd><img src="{{ business.logo.url }}" alt="" class="h-10"></dd></div>
+<div class="space-y-6 max-w-lg" x-data="{ activeTab: 'general' }">
+
+  <!-- Tab Navigation -->
+  <div class="border-b border-gray-200">
+    <nav class="flex space-x-6" aria-label="Tabs">
+      <button @click="activeTab = 'general'" :class="activeTab === 'general' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'" class="whitespace-nowrap py-3 px-1 border-b-2 text-sm font-medium transition">
+        General
+      </button>
+      {% if request.user.is_admin %}
+      <button @click="activeTab = 'session'" :class="activeTab === 'session' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'" class="whitespace-nowrap py-3 px-1 border-b-2 text-sm font-medium transition">
+        Session
+      </button>
       {% endif %}
-    </dl>
-    <a href="{% url 'business_settings' %}" class="inline-flex items-center px-4 py-2 text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition">
-      <i class="fas fa-edit mr-1"></i> Edit Business Info
-    </a>
-    {% else %}
-    <p class="text-sm text-gray-500 mb-4">No business information configured yet.</p>
-    <a href="{% url 'setup' %}" class="inline-flex items-center px-4 py-2 text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition">
-      <i class="fas fa-store mr-1"></i> Set Up Business
-    </a>
-    {% endif %}
+      <button @click="activeTab = 'customers'" :class="activeTab === 'customers' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'" class="whitespace-nowrap py-3 px-1 border-b-2 text-sm font-medium transition">
+        Customers
+      </button>
+      <button @click="activeTab = 'backup'" :class="activeTab === 'backup' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'" class="whitespace-nowrap py-3 px-1 border-b-2 text-sm font-medium transition">
+        Backup &amp; Restore
+      </button>
+    </nav>
   </div>
 
-  <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 max-w-lg">
-    <h3 class="text-lg font-semibold text-gray-800 mb-4">Markup Rate</h3>
-    <form method="post">
-      {% csrf_token %}
-      <div class="space-y-4">
+  <form method="post">
+    {% csrf_token %}
+
+    <!-- General Tab -->
+    <div x-show="activeTab === 'general'" x-transition>
+      <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <h3 class="text-lg font-semibold text-gray-800 mb-4">Business Information</h3>
+        {% if business %}
+        <dl class="text-sm space-y-2 mb-4">
+          <div class="flex justify-between"><dt class="text-gray-500">Name:</dt><dd class="text-gray-800 font-medium">{{ business.business_name }}</dd></div>
+          <div class="flex justify-between"><dt class="text-gray-500">Phone:</dt><dd class="text-gray-800">{{ business.contact_phone|default:"—" }}</dd></div>
+          <div class="flex justify-between"><dt class="text-gray-500">Email:</dt><dd class="text-gray-800">{{ business.contact_email|default:"—" }}</dd></div>
+          <div class="flex justify-between"><dt class="text-gray-500">Website:</dt><dd class="text-gray-800">{{ business.website|default:"—" }}</dd></div>
+          {% if business.logo %}
+          <div class="flex justify-between items-center"><dt class="text-gray-500">Logo:</dt><dd><img src="{{ business.logo.url }}" alt="" class="h-10"></dd></div>
+          {% endif %}
+        </dl>
+        <a href="{% url 'business_settings' %}" class="inline-flex items-center px-4 py-2 text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition">
+          <i class="fas fa-edit mr-1"></i> Edit Business Info
+        </a>
+        {% else %}
+        <p class="text-sm text-gray-500 mb-4">No business information configured yet.</p>
+        <a href="{% url 'setup' %}" class="inline-flex items-center px-4 py-2 text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition">
+          <i class="fas fa-store mr-1"></i> Set Up Business
+        </a>
+        {% endif %}
+      </div>
+
+      <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mt-6">
+        <h3 class="text-lg font-semibold text-gray-800 mb-4">Markup Rate</h3>
         <div>
           <label for="{{ form.default_markup_rate.id_for_label }}" class="block text-sm font-medium text-gray-700 mb-1">{{ form.default_markup_rate.label }}</label>
           {{ form.default_markup_rate }}
@@ -43,15 +66,93 @@
           {% endfor %}
         </div>
       </div>
-      <div class="mt-6 flex items-center justify-between">
-        <a href="{% url 'admin:index' %}" class="inline-flex items-center px-4 py-2 text-sm font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition">
-          <i class="fas fa-cog mr-1"></i> Admin Panel
-        </a>
-        <button type="submit" class="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition">
-          <i class="fas fa-save mr-1"></i> Save Settings
-        </button>
+    </div>
+
+    <!-- Session Tab -->
+    {% if request.user.is_admin %}
+    <div x-show="activeTab === 'session'" x-transition>
+      <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6"
+           x-data="{ enabled: {{ form.session_idle_timeout_enabled.value|yesno:'true,false' }} }">
+        <h3 class="text-lg font-semibold text-gray-800 mb-4">
+          <i class="fas fa-clock mr-1 text-gray-500"></i> Session Timeout
+        </h3>
+        <div class="space-y-4">
+          <div class="flex items-center justify-between">
+            <div>
+              <span class="text-sm font-medium text-gray-700">{{ form.session_idle_timeout_enabled.label }}</span>
+              {% if form.session_idle_timeout_enabled.help_text %}
+              <p class="text-xs text-gray-500">{{ form.session_idle_timeout_enabled.help_text }}</p>
+              {% endif %}
+            </div>
+            <div class="flex items-center">
+              <input type="hidden" name="session_idle_timeout_enabled" :value="enabled ? 'on' : ''">
+              <button type="button" @click="enabled = !enabled"
+                      :class="enabled ? 'bg-blue-600' : 'bg-gray-200'"
+                      class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                <span :class="enabled ? 'translate-x-6' : 'translate-x-1'"
+                      class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform"></span>
+              </button>
+            </div>
+          </div>
+          <div x-show="enabled" x-transition x-cloak>
+            <label for="{{ form.session_idle_timeout.id_for_label }}" class="block text-sm font-medium text-gray-700 mb-1">{{ form.session_idle_timeout.label }}</label>
+            <div class="flex items-center gap-2">
+              {{ form.session_idle_timeout }}
+              <span class="text-sm text-gray-500">minutes</span>
+            </div>
+            {% if form.session_idle_timeout.help_text %}
+            <p class="mt-1 text-xs text-gray-500">{{ form.session_idle_timeout.help_text }}</p>
+            {% endif %}
+            {% for error in form.session_idle_timeout.errors %}
+            <p class="mt-1 text-xs text-red-600">{{ error }}</p>
+            {% endfor %}
+          </div>
+        </div>
       </div>
-    </form>
-  </div>
+    </div>
+    {% endif %}
+
+    <!-- Customers Tab -->
+    <div x-show="activeTab === 'customers'" x-transition>
+      <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <h3 class="text-lg font-semibold text-gray-800 mb-4">
+          <i class="fas fa-users mr-1 text-gray-500"></i> Customer Defaults
+        </h3>
+        <div>
+          <label for="{{ form.default_customer_credit_limit.id_for_label }}" class="block text-sm font-medium text-gray-700 mb-1">{{ form.default_customer_credit_limit.label }}</label>
+          {{ form.default_customer_credit_limit }}
+          {% if form.default_customer_credit_limit.help_text %}
+          <p class="mt-1 text-xs text-gray-500">{{ form.default_customer_credit_limit.help_text }}</p>
+          {% endif %}
+          {% for error in form.default_customer_credit_limit.errors %}
+          <p class="mt-1 text-xs text-red-600">{{ error }}</p>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Backup & Restore Tab -->
+    <div x-show="activeTab === 'backup'" x-transition>
+      <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <h3 class="text-lg font-semibold text-gray-800 mb-4">
+          <i class="fas fa-cloud-upload-alt mr-1 text-gray-500"></i> Backup &amp; Restore
+        </h3>
+        <div class="flex flex-col items-center py-8 text-center">
+          <span class="inline-flex items-center px-3 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-500 mb-4">Coming Soon</span>
+          <p class="text-sm text-gray-500">Backup and restore will be available in a future version.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="mt-6 flex items-center justify-between">
+      <a href="{% url 'admin:index' %}" class="inline-flex items-center px-4 py-2 text-sm font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition">
+        <i class="fas fa-cog mr-1"></i> Admin Panel
+      </a>
+      <button type="submit" class="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition">
+        <i class="fas fa-save mr-1"></i> Save Settings
+      </button>
+    </div>
+  </form>
 </div>
 {% endblock %}

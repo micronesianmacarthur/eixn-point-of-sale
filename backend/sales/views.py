@@ -642,9 +642,16 @@ class ReturnSaleView(LoginRequiredMixin, View):
 class OfflineRecoveryView(LoginRequiredMixin, TemplateView):
     template_name = 'sales/offline_recovery.html'
 
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        from inventory.models import Product
+        products = Product.objects.order_by('name')
+        context['products_json'] = list(products.values('id', 'sku', 'name'))
+        return context
+
     def post(self, request):
         try:
-            data = json.loads(request.body or '{}')
+            data = json.loads(request.POST.get('body') or '{}')
             rows = data.get('rows', [])
             if not rows:
                 messages.error(request, 'No rows provided.')

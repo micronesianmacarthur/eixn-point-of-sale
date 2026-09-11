@@ -2,9 +2,34 @@
 {% block title %}{{ customer.name }} — {{ block.super }}{% endblock %}
 {% block page_title %}{{ customer.name }}{% endblock %}
 {% block content %}
-<a href="{% url 'customers:customer_list' %}" class="inline-flex items-center text-sm text-gray-500 hover:text-gray-700 mb-4 transition">
-  <i class="fas fa-arrow-left mr-1"></i> Back to Customers
-</a>
+<div x-data="{
+  showEdit: false,
+  editId: '',
+  editName: '', editPhone: '', editEmail: '', editCreditLimit: '', editAllowPayLater: false, editIsOwner: false, editLoyaltyEnabled: true,
+  editCustomer(id, name, phone, email, creditLimit, allowPayLater, isOwner, loyaltyEnabled) {
+    this.editId = id;
+    this.editName = name;
+    this.editPhone = phone;
+    this.editEmail = email;
+    this.editCreditLimit = creditLimit;
+    this.editAllowPayLater = allowPayLater;
+    this.editIsOwner = isOwner;
+    this.editLoyaltyEnabled = loyaltyEnabled;
+    this.showEdit = true;
+  }
+}">
+<div class="flex items-center justify-between mb-4">
+  <a href="{% url 'customers:customer_list' %}" class="inline-flex items-center text-sm text-gray-500 hover:text-gray-700 transition">
+    <i class="fas fa-arrow-left mr-1"></i> Back to Customers
+  </a>
+  {% if request.user.is_manager %}
+  <button type="button"
+          @click="editCustomer({{ customer.id }}, '{{ customer.name|escapejs }}', '{{ customer.phone|escapejs }}', '{{ customer.email|escapejs }}', {{ customer.credit_limit }}, {{ customer.allow_pay_later|yesno:'true,false' }}, {{ customer.is_owner|yesno:'true,false' }}, {{ customer.loyalty_enabled|yesno:'true,false' }})"
+          class="inline-flex items-center px-4 py-2 text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition">
+    <i class="fas fa-edit mr-1"></i> Edit
+  </button>
+  {% endif %}
+</div>
 <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
   <div class="md:col-span-1 space-y-6">
     <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
@@ -95,5 +120,54 @@
       </div>
     </form>
   </div>
+</div>
+
+<div x-show="showEdit" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50" x-cloak>
+  <div class="bg-gray-100 rounded-xl shadow-2xl w-full max-w-md mx-4">
+    <form method="post" :action="`/customers/${editId}/edit/`">
+      {% csrf_token %}
+      <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+        <h3 class="text-lg font-semibold text-gray-800">Edit Customer</h3>
+        <button type="button" @click="showEdit = false" class="text-gray-400 hover:text-gray-600">&times;</button>
+      </div>
+      <div class="px-6 py-4 space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Name</label>
+          <input type="text" name="name" x-model="editName" class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" required>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+          <input type="text" name="phone" x-model="editPhone" class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+          <input type="email" name="email" x-model="editEmail" class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Credit Limit ($)</label>
+          <input type="number" name="credit_limit" step="0.01" x-model="editCreditLimit" class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+        </div>
+        <div class="grid grid-cols-3 gap-4">
+          <label class="flex items-center space-x-2 text-sm text-gray-700">
+            <input type="checkbox" name="allow_pay_later" x-model="editAllowPayLater" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+            <span>Pay Later</span>
+          </label>
+          <label class="flex items-center space-x-2 text-sm text-gray-700">
+            <input type="checkbox" name="is_owner" x-model="editIsOwner" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+            <span>Owner</span>
+          </label>
+          <label class="flex items-center space-x-2 text-sm text-gray-700">
+            <input type="checkbox" name="loyalty_enabled" x-model="editLoyaltyEnabled" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+            <span>Loyalty</span>
+          </label>
+        </div>
+      </div>
+      <div class="px-6 py-4 border-t border-gray-200 flex justify-end space-x-3">
+        <button type="button" @click="showEdit = false" class="px-4 py-2 text-sm text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition">Cancel</button>
+        <button type="submit" class="px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition">Update</button>
+      </div>
+    </form>
+  </div>
+</div>
 </div>
 {% endblock %}

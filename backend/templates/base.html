@@ -13,7 +13,7 @@
     {% block extra_css %}{% endblock %}
 </head>
 <body class="bg-gray-200" hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
-    <div x-data="{ sidebarOpen: false, idleTimer: null, initIdleWatcher() { const reset = () => { clearTimeout(this.idleTimer); this.idleTimer = setTimeout(() => { window.location.href = '/login/'; }, 300000); }; reset(); this.$el.addEventListener('click', reset); this.$el.addEventListener('keydown', reset); this.$el.addEventListener('touchstart', reset); } }"
+    <div x-data="{ sidebarOpen: false, idleTimer: null, initIdleWatcher() { {% if session_timeout_enabled %}const timeoutMs = {{ session_timeout_seconds|default:300 }} * 1000; const reset = () => { clearTimeout(this.idleTimer); this.idleTimer = setTimeout(() => { window.location.href = '/login/'; }, timeoutMs); }; reset(); this.$el.addEventListener('click', reset); this.$el.addEventListener('keydown', reset); this.$el.addEventListener('touchstart', reset);{% endif %} } }"
          x-init="initIdleWatcher()" class="flex h-screen overflow-hidden">
         <div x-show="sidebarOpen" @click="sidebarOpen = false" class="fixed inset-0 bg-black bg-opacity-50 z-30 lg:hidden" x-cloak></div>
         <aside class="w-64 bg-gray-900 text-gray-300 flex-col flex-shrink-0 hidden lg:flex"

@@ -71,6 +71,7 @@ TEMPLATES = [
                 'django.contrib.messages.context_processors.messages',
                 'sales.context_processors.active_session',
                 'core.context_processors.business_info',
+                'core.context_processors.session_timeout_config',
             ],
         },
     },

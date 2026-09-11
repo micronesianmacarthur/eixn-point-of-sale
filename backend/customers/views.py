@@ -17,6 +17,13 @@ class CustomerListView(LoginRequiredMixin, ListView):
     context_object_name = 'customers'
     paginate_by = 25
 
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        from core.models import SystemSetting
+        setting = SystemSetting.objects.filter(key='DEFAULT_CUSTOMER_CREDIT_LIMIT').first()
+        context['default_credit_limit'] = setting.value if setting else '0.00'
+        return context
+
 
 class CustomerDetailView(LoginRequiredMixin, DetailView):
     model = Customer
