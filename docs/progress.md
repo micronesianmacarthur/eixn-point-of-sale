@@ -18,6 +18,13 @@ A running log of changes made to the project, organized by date.
   - On-screen receipt page (`/sales/receipt/<id>/`) now shown after every completed sale and return
   - Confirmation below the receipt: "Print Small Receipt" (80mm thermal) or "Print Full Page (Letter)" via `window.print()` with format-specific CSS
   - "New Sale" link returns to checkout
+### Sales Management Page — Fill-Height Scrollable Table
+- `#sale-table` now fills the remaining height of its parent and scrolls internally (`templates/sales/sale_list.html`, `partials/sale_table.html`)
+- Page content wrapped in `md:flex md:flex-col md:h-full` (fills the `flex-1 overflow-y-auto` base wrapper); table is `md:flex-1 md:min-h-0` with an `overflow-auto min-h-0 flex-1` viewport
+- Header row pinned via `sticky top-0 bg-gray-50` while scrolling
+- Responsive: fixed-height fill only ≥768px (`md:`); on mobile the page scrolls naturally with horizontal table scroll preserved
+- Filter form now uses `hx-swap="outerHTML"` so HTMX swaps replace the whole `#sale-table` (no nested duplicate ids); partial mirrors the same structure
+
 ### Top Items Panel — Fixed Height + Scroll
 - Panel body now capped at ~4 item rows (`max-h-60`) with `overflow-y-auto` scrolling
 - Column headers stay pinned via `sticky top-0` while scrolling within the panel
