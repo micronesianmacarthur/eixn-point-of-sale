@@ -4,6 +4,24 @@ A running log of changes made to the project, organized by date.
 
 ---
 
+## 2026-09-30
+
+### README — Installation & Business Configuration
+- Wrote `README.md` (was empty) covering prerequisites, local installation via `uv sync` + `make build`,
+  running the server **and** the django-q2 `qcluster` worker (receipts do not print without it),
+  Docker Compose deployment (`make up`/`deploy.sh`), and a full business-configuration section
+- Documented the fresh-clone gotcha that caused the `make build` failure: `backend/.env` is git-ignored
+  and `DATABASE_URL` has no default, so every `manage.py` command aborts until
+  `cp .env.example .env` is run
+- Documented business setup in two layers: environment variables (DB, printer/cash drawer, S3 backup)
+  and in-app settings (`/setup/` `BusinessInfo` wizard, `/settings/` `SystemSetting` rows, roles/permissions,
+  inventory ordering, open/close session flow, customer credit)
+- Recorded fixed behaviours explicitly: `TIME_ZONE` is `Pacific/Pohnpei`, money is `Decimal` with
+  `ROUND_HALF_UP`, and there is **no** tax, currency, or receipt-footer configuration
+- Added a troubleshooting section and a Make-target reference table
+
+---
+
 ## 2026-09-12
 
 ### Barcode Scanner + Network Printer + Cash Drawer (SRS §3.2)
