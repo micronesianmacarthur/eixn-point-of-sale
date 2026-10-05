@@ -4,6 +4,26 @@ A running log of changes made to the project, organized by date.
 
 ---
 
+## 2026-10-05
+
+### Dashboard: voided sales no longer counted as revenue
+- Fixed the dashboard "today" revenue card, which aggregated **every** transaction for the day
+  regardless of status — so a voided sale kept inflating both the revenue total and the transaction
+  count. `DashboardView` now excludes `status=VOIDED`, matching what the monthly card, the 30-day
+  chart, the by-clerk table and the weekly comparison already did
+- Fixed the same omission in the dashboard top-product query, which counted the line items of voided
+  transactions (it also bypasses the `get_top_products()` helper that already filters on `POSTED`)
+- Pre-existing bug, present on `main` unchanged; found via the dashboard, not introduced by any
+  other work
+- Added `DashboardVoidExclusionTests` in `sales/tests.py` (previously an empty file): revenue,
+  transaction count and top product all ignore a voided sale; an all-void day reports zero instead
+  of crashing on `None`; posted sales are still counted, guarding against over-filtering; and voiding
+  a sale from another day leaves today's figures untouched
+- Confirmed the tests genuinely catch the bug — reverting the fix fails the 4 bug-specific tests while
+  the 2 guard tests keep passing
+
+---
+
 ## 2026-09-30
 
 ### README — Installation & Business Configuration

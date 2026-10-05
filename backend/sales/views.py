@@ -45,11 +45,19 @@ class DashboardView(LoginRequiredMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         today = date.today()
         month_start = today.replace(day=1)
-        txns_today = Transaction.objects.filter(transaction_date__date=today)
+        # Voided transactions must not count toward revenue, the transaction
+        # count, or the top product. This matches how every other figure on this
+        # dashboard (monthly_total, get_daily_trend, get_sales_by_clerk,
+        # get_weekly_comparison) already filters them out.
+        txns_today = Transaction.objects.filter(
+            transaction_date__date=today
+        ).exclude(status=Transaction.Status.VOIDED)
         context['sales_today_total'] = txns_today.aggregate(total=Sum('total_amount'))['total'] or 0
         context['sales_today_count'] = txns_today.count()
         top_item = (
-            TransactionLineItem.objects.filter(transaction__transaction_date__date=today)
+            TransactionLineItem.objects.filter(
+                transaction__transaction_date__date=today
+            ).exclude(transaction__status=Transaction.Status.VOIDED)
             .values('product__name')
             .annotate(total_qty=Sum('quantity_sold'))
             .order_by('-total_qty').first()
