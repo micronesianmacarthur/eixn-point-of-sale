@@ -6,6 +6,23 @@ A running log of changes made to the project, organized by date.
 
 ## 2026-10-05
 
+### Merged `sales/split-payment` into `main`
+- Merged the split-tender-at-checkout feature branch into `main` with `--no-ff` (merge commit
+  `ecd5ea6`) and deleted the branch, per the Git workflow in `AGENTS.md`
+- Verified the dev database was already compliant with the split-payment schema before merging:
+  `sales` `0007`–`0009` all applied, the legacy `payment_type`/`payment_amount` columns already
+  dropped, and `manage.py migrate` reports "No migrations to apply". The `0008_backfill_payments`
+  backfill had preserved every split tender — each transaction's `Payment` rows sum to its
+  `total_amount` — so no data repair was needed
+- Took a `dumpdata` backup to `/tmp/opencode/eixn_dump_premerge.json` before touching the dev
+  database, as `AGENTS.md` requires for migrations run against real data
+- Post-merge `manage.py check` is clean and the suite still shows only the 4 documented baseline
+  failures in `users.tests.UserManagementDeleteTests` (missing `BusinessInfo` → 302 to `/setup/`)
+- Corrected the branch-naming convention in `AGENTS.md`: feature branches are `<app>/<name>`
+  (e.g. `sales/split-payment`), not `feature/<name>`, matching how branches are actually named
+
+---
+
 ### Dashboard: voided sales no longer counted as revenue
 - Fixed the dashboard "today" revenue card, which aggregated **every** transaction for the day
   regardless of status — so a voided sale kept inflating both the revenue total and the transaction

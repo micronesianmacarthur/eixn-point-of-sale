@@ -5,7 +5,7 @@
 - NEVER run `git commit`, `git merge`, or `git push` without the user's explicit instruction to do so.
 - Before any commit/merge/push, present the changes for the user to review and wait for their approval.
 - Only stage files the user intends to include; never commit secrets or unrelated files.
-- Feature work happens on `feature/<name>` branches, merged to `main` with `--no-ff`, then the branch is deleted.
+- Feature work happens on `<app>/<name>` branches (the Django app is the prefix, e.g. `sales/split-payment`, `inventory/count-sheet`), merged to `main` with `--no-ff`, then the branch is deleted.
 
 ## Conventions
 
