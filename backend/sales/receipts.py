@@ -74,17 +74,22 @@ def build_receipt_lines(txn):
 
     lines.append("-" * COL_WIDTH)
 
+    payments = list(txn.payments.all())
+
     if is_refund:
-        lines.append(f"{'REFUND':<31}{_fmt_money(txn.total_amount):>9}")
-        lines.append(f"{'TAKEN FROM':<31}{_fmt_money(txn.payment_amount):>9}")
+        lines.append(f"{'REFUND':<31}{_fmt_money(abs(txn.total_amount)):>9}")
+        if payments:
+            lines.append(f"{'TAKEN FROM':<31}{_fmt_money(payments[0].amount):>9}")
     else:
         lines.append(f"{'TOTAL':<31}{_fmt_money(txn.total_amount):>9}")
-        if txn.payment_amount:
-            lines.append(f"{'PAID':<31}{_fmt_money(txn.payment_amount):>9}")
-            change = txn.payment_amount - txn.total_amount
-            if change > 0:
-                lines.append(f"{'CHANGE':<31}{_fmt_money(change):>9}")
-    lines.append(f"Payment: {txn.get_payment_type_display()}")
+        # One line per tender. No 'PAID' line: the legs sum to it by
+        # definition, and the breakdown is what the cashier needs when the
+        # drawer doesn't balance.
+        for payment in payments:
+            lines.append(f"{payment.get_payment_type_display():<31}{_fmt_money(payment.amount):>9}")
+        change = txn.change_due
+        if change > 0:
+            lines.append(f"{'CHANGE':<31}{_fmt_money(change):>9}")
 
     lines += [
         "=" * COL_WIDTH,

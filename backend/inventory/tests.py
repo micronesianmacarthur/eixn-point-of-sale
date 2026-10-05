@@ -80,7 +80,7 @@ class ReceiveInventoryWithOwnerContributionTests(TestCase):
         self.assertEqual(Transaction.objects.count(), 1)
         txn = Transaction.objects.first()
         self.assertEqual(txn.total_amount, Decimal('-25.00'))
-        self.assertEqual(txn.payment_type, Transaction.PaymentType.OWNER_DRAW)
+        self.assertEqual(txn.payment_amount_for('OWNER_DRAW'), Decimal('25.00'))
         self.assertEqual(txn.customer, self.owner)
 
         self.owner.refresh_from_db()

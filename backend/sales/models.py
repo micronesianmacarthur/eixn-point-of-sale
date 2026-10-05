@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.db import models
 
 from customers.models import Customer
@@ -31,24 +33,38 @@ class Transaction(models.Model):
         POSTED = 'POSTED', 'Posted'
         VOIDED = 'VOIDED', 'Voided'
 
-    class PaymentType(models.TextChoices):
-        CASH = 'CASH', 'Cash'
-        CARD = 'CARD', 'Card'
-        STORE_CREDIT = 'STORE_CREDIT', 'Store Credit'
-        OWNER_DRAW = 'OWNER_DRAW', 'Owner Draw'
-
     session = models.ForeignKey(Session, on_delete=models.RESTRICT, related_name='transactions')
     cashier = models.ForeignKey(User, on_delete=models.PROTECT, related_name='transactions')
     customer = models.ForeignKey(Customer, on_delete=models.SET_NULL, null=True, blank=True, related_name='transactions')
     total_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
-    payment_type = models.CharField(max_length=12, choices=PaymentType.choices, default=PaymentType.CASH)
-    payment_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
     status = models.CharField(max_length=8, choices=Status.choices, default=Status.POSTED)
     created_at = models.DateTimeField(auto_now_add=True)
     transaction_date = models.DateTimeField(help_text='Actual business date (user-inputtable for offline recovery)')
 
     def __str__(self):
         return f'Txn {self.id} (${self.total_amount})'
+
+    @property
+    def change_due(self):
+        """Change handed back to the customer.
+
+        Derived from the payment rows rather than stored, so it cannot drift
+        from the tenders that produced it. Only sales can over-tender; refunds
+        and owner draws have negative totals and never produce change.
+        """
+        if self.total_amount <= 0:
+            return Decimal('0.00')
+        tendered = sum((p.amount for p in self.payments.all()), Decimal('0.00'))
+        change = tendered - self.total_amount
+        return change if change > 0 else Decimal('0.00')
+
+    def payment_amount_for(self, payment_type):
+        """Tendered amount for one payment type, or zero if that leg is absent."""
+        total = Decimal('0.00')
+        for payment in self.payments.all():
+            if payment.payment_type == payment_type:
+                total += payment.amount
+        return total
 
 
 class TransactionLineItem(models.Model):
@@ -57,3 +73,47 @@ class TransactionLineItem(models.Model):
     quantity_sold = models.DecimalField(max_digits=10, decimal_places=3)
     price_at_sale = models.DecimalField(max_digits=12, decimal_places=2)
     cost_price = models.DecimalField(max_digits=12, decimal_places=2)
+
+
+class Payment(models.Model):
+    """One tender against a Transaction.
+
+    A sale may be split across several payments (cash + card + store credit),
+    each recorded as its own row. A transaction may hold at most one payment per
+    type — the cashier re-tendering the same type merges into the existing row
+    rather than adding another.
+    """
+
+    class PaymentType(models.TextChoices):
+        CASH = 'CASH', 'Cash'
+        CARD = 'CARD', 'Card'
+        STORE_CREDIT = 'STORE_CREDIT', 'Store Credit'
+        OWNER_DRAW = 'OWNER_DRAW', 'Owner Draw'
+
+    transaction = models.ForeignKey(Transaction, on_delete=models.CASCADE, related_name='payments')
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    payment_type = models.CharField(max_length=12, choices=PaymentType.choices)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['payment_type']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['transaction', 'payment_type'],
+                name='unique_payment_type_per_transaction',
+            ),
+        ]
+
+    PAYMENT_BADGE_CLASSES = {
+        PaymentType.CASH: 'bg-green-100 text-green-700',
+        PaymentType.CARD: 'bg-blue-100 text-blue-700',
+        PaymentType.STORE_CREDIT: 'bg-yellow-100 text-yellow-700',
+        PaymentType.OWNER_DRAW: 'bg-purple-100 text-purple-700',
+    }
+
+    def __str__(self):
+        return f'{self.get_payment_type_display()} ${self.amount} (Txn {self.transaction_id})'
+
+    @property
+    def badge_class(self):
+        return self.PAYMENT_BADGE_CLASSES.get(self.payment_type, 'bg-gray-100 text-gray-600')

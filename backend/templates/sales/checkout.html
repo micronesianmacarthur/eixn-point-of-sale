@@ -119,39 +119,98 @@
                   </template>
                 </div>
                 <div x-show="!isReturn">
-                  <label class="block text-xs font-medium text-gray-600 mb-1">Payment Type</label>
-                  <select x-model="paymentType" class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          :class="{'border-red-500 ring-2 ring-red-200': creditError}">
+                  <label class="block text-xs font-medium text-gray-600 mb-1">Amount Tendered ($)</label>
+                  <div class="flex space-x-2">
+                    <input type="number" x-model="amountInput" step="0.01" min="0" placeholder="0.00"
+                           @keyup.enter="addLeg(paymentType)"
+                           class="flex-1 bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                           :class="{'border-red-500 ring-2 ring-red-200': tenderError}">
+                    <button type="button" @click="showCashModal = true"
+                            class="px-3 bg-white rounded-lg border border-gray-300 text-gray-600 hover:border-gray-400 transition"
+                            title="Keypad">
+                      <i class="fas fa-calculator"></i>
+                    </button>
+                    <button type="button" @click="fillRemaining()"
+                            class="px-3 bg-white rounded-lg border border-gray-300 text-gray-600 hover:border-gray-400 transition text-xs font-medium"
+                            title="Fill remaining balance">
+                      Exact
+                    </button>
+                  </div>
+                </div>
+
+                <div x-show="!isReturn">
+                  <label class="block text-xs font-medium text-gray-600 mb-1">Pay With</label>
+                  <div class="grid grid-cols-3 gap-2">
+                    <button type="button" @click="addLeg('CASH')"
+                            class="py-2 text-sm font-medium rounded-lg border transition"
+                            :class="legs.some(l => l.type === 'CASH') ? 'bg-green-100 border-green-300 text-green-800' : 'bg-white border-gray-300 text-gray-700 hover:border-green-400'">
+                      Cash
+                    </button>
+                    <button type="button" @click="addLeg('CARD')"
+                            class="py-2 text-sm font-medium rounded-lg border transition"
+                            :class="legs.some(l => l.type === 'CARD') ? 'bg-blue-100 border-blue-300 text-blue-800' : 'bg-white border-gray-300 text-gray-700 hover:border-blue-400'">
+                      Card
+                    </button>
+                    <button type="button" @click="addLeg('STORE_CREDIT')"
+                            class="py-2 text-sm font-medium rounded-lg border transition"
+                            :class="legs.some(l => l.type === 'STORE_CREDIT') ? 'bg-yellow-100 border-yellow-300 text-yellow-800' : 'bg-white border-gray-300 text-gray-700 hover:border-yellow-400'">
+                      Credit
+                    </button>
+                  </div>
+                </div>
+
+                <div x-show="!isReturn && legs.length > 0" class="bg-gray-50 rounded-lg border border-gray-200 px-3 py-2">
+                  <div class="flex items-center justify-between text-xs text-gray-500 mb-1">
+                    <span>Balance due</span>
+                    <span class="font-semibold text-sm"
+                          :class="remaining <= 0 ? 'text-green-600' : 'text-gray-900'"
+                          x-text="'$' + remaining.toFixed(2)"></span>
+                  </div>
+                  <div class="space-y-1">
+                    <template x-for="leg in legs" :key="leg.type">
+                      <div class="flex items-center justify-between text-sm">
+                        <span class="font-medium text-gray-700" x-text="paymentLabel(leg.type)"></span>
+                        <span class="flex items-center space-x-2">
+                          <span class="font-semibold text-gray-900" x-text="'$' + legAmount(leg)"></span>
+                          <button type="button" @click="removeLeg(leg.type)" class="text-gray-400 hover:text-red-500 transition">
+                            <i class="fas fa-times text-xs"></i>
+                          </button>
+                        </span>
+                      </div>
+                    </template>
+                  </div>
+                </div>
+
+                <div x-show="tenderError" class="flex items-center text-red-600 text-xs">
+                  <i class="fas fa-exclamation-circle mr-1"></i>
+                  <span x-text="tenderError"></span>
+                </div>
+                <div x-show="creditError" class="flex items-center text-red-600 text-xs">
+                  <i class="fas fa-exclamation-circle mr-1"></i>
+                  <span x-text="creditError"></span>
+                </div>
+
+                <div x-show="isReturn">
+                  <label class="block text-xs font-medium text-gray-600 mb-1">Refund Method</label>
+                  <select x-model="paymentType" class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                     <option value="CASH">Cash</option>
                     <option value="CARD">Card</option>
                     <option value="STORE_CREDIT" x-show="customerId !== ''">Store Credit</option>
                   </select>
-                  <div x-show="creditError" class="mt-1 flex items-center text-red-600 text-xs">
-                    <i class="fas fa-exclamation-circle mr-1"></i>
-                    <span x-text="creditError"></span>
-                  </div>
                 </div>
-                <div x-show="!isReturn && paymentType === 'CASH'">
-                  <label class="block text-xs font-medium text-gray-600 mb-1">Tendered Amount ($)</label>
-                  <button type="button" @click="cashBuffer = '0'; showCashModal = true"
-                          class="w-full flex items-center justify-between bg-white rounded-lg border border-gray-300 px-3 py-2.5 text-sm hover:border-gray-400 transition text-left"
-                          :class="{'border-red-500 ring-2 ring-red-200': tenderError}">
-                    <span x-show="!tendered" class="text-gray-400"><i class="fas fa-calculator mr-2"></i> Tap to enter amount</span>
-                    <span x-show="tendered" class="font-medium text-gray-800"><i class="fas fa-calculator mr-2"></i> $<span x-text="tendered.toFixed(2)"></span></span>
-                    <i class="fas fa-chevron-right text-xs text-gray-400"></i>
-                  </button>
-                  <div x-show="tenderError" class="mt-1 flex items-center text-red-600 text-xs">
-                    <i class="fas fa-exclamation-circle mr-1"></i>
-                    <span>Tender must be at least <strong x-text="'$' + total.toFixed(2)"></strong></span>
-                  </div>
-                </div>
+
                 <button type="button"
                         @click="isReturn ? processRefund() : submitCheckout()"
+                        :disabled="!isReturn && !canSubmit"
                         :class="isReturn ? 'bg-amber-600 hover:bg-amber-700' : 'bg-blue-600 hover:bg-blue-700'"
-                        class="w-full py-2.5 text-white font-medium rounded-lg transition text-sm">
+                        class="w-full py-2.5 text-white font-medium rounded-lg transition text-sm disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-blue-600">
                   <i :class="isReturn ? 'fas fa-undo' : 'fas fa-check'" class="mr-1"></i>
                   <span x-text="isReturn ? 'Process Refund' : 'Complete Sale'"></span>
                 </button>
+                <div x-show="!isReturn && submitHint" class="mt-2 text-xs text-gray-500 text-center">
+                  <i class="fas fa-info-circle mr-1"></i>
+                  <span x-text="submitHint"></span>
+                </div>
               </div>
             </div>
           </div>
@@ -211,9 +270,9 @@
   <div x-show="showChangeModal" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
     <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-8 text-center">
       <h2 class="text-lg font-semibold text-gray-800 mb-2">Give Change</h2>
-      <p class="text-sm text-gray-500 mb-4" x-text="'Total: $' + total.toFixed(2) + '  Tendered: $' + (parseFloat(tendered) || 0).toFixed(2)"></p>
+      <p class="text-sm text-gray-500 mb-4" x-text="'Total: $' + total.toFixed(2) + '  Tendered: $' + tendered.toFixed(2)"></p>
       <div class="text-6xl font-bold text-green-600 mb-6" x-text="'$' + changeAmount.toFixed(2)"></div>
-      <button type="button" @click="completeAfterChange()"
+      <button type="button" @click="postCheckout()"
               class="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl transition text-base">
         Complete Transaction
       </button>
@@ -229,6 +288,7 @@
   <input type="hidden" name="cart_json" id="cart-json-input" value="">
   <input type="hidden" name="customer_id" id="customer-id-input" value="">
   <input type="hidden" name="payment_type" id="payment-type-input" value="">
+  <input type="hidden" name="payments_json" id="payments-json-input" value="">
   <input type="hidden" name="return_of" id="return-of-input" value="">
 </form>
 

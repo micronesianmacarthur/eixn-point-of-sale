@@ -77,7 +77,7 @@ class ProcessOwnerContributionTests(TestCase):
         self.assertEqual(Transaction.objects.count(), 1)
         txn = Transaction.objects.first()
         self.assertEqual(txn.total_amount, Decimal('-30'))
-        self.assertEqual(txn.payment_type, Transaction.PaymentType.OWNER_DRAW)
+        self.assertEqual(txn.payment_amount_for('OWNER_DRAW'), Decimal('30'))
         self.assertEqual(txn.customer, self.owner)
         self.assertEqual(txn.cashier, self.operator)
         self.assertEqual(txn.session, self.session)

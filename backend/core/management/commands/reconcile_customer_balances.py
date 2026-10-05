@@ -1,9 +1,13 @@
 from django.core.management.base import BaseCommand
-from django.db.models import DecimalField, F, Q, Sum, Value
+from django.db.models import Case, DecimalField, F, Q, Sum, Value, When
 from django.db.models.functions import Coalesce
 
 from customers.models import Customer
-from sales.models import Transaction
+from sales.models import Payment, Transaction
+from sales.services import to_cents
+
+# VOIDED transactions must not contribute; everything else (POSTED, DRAFT) does.
+ACTIVE_STATUSES = [s for s in Transaction.Status.values if s != Transaction.Status.VOIDED]
 
 
 class Command(BaseCommand):
@@ -18,14 +22,28 @@ class Command(BaseCommand):
         reconciled = errors = 0
 
         for customer in customers:
+            # Expected balance is the store credit actually tendered, signed by
+            # the transaction's direction: a credit sale adds its credit leg to
+            # the tab, a refund paid back onto the tab subtracts it. Summing
+            # whole transaction totals (the pre-split approach) cannot express a
+            # sale that was split cash + credit.
             expected = (
-                Transaction.objects.filter(
-                    customer=customer,
-                    payment_type=Transaction.PaymentType.STORE_CREDIT,
+                Payment.objects.filter(
+                    transaction__customer=customer,
+                    transaction__status__in=ACTIVE_STATUSES,
+                    payment_type=Payment.PaymentType.STORE_CREDIT,
                 )
-                .exclude(status=Transaction.Status.VOIDED)
-                .aggregate(total=Coalesce(Sum('total_amount'), Value(0, output_field=DecimalField())))['total']
+                .select_related('transaction')
+                .annotate(
+                    signed=Case(
+                        When(transaction__total_amount__lt=0, then=-F('amount')),
+                        default=F('amount'),
+                        output_field=DecimalField(),
+                    )
+                )
+                .aggregate(total=Coalesce(Sum('signed'), Value(0, output_field=DecimalField())))['total']
             )
+            expected = to_cents(expected)
             delta = customer.cached_balance - expected
 
             if delta == 0:

@@ -79,22 +79,20 @@
     <div class="text-sm border-t-2 border-dashed pt-2 space-y-0.5">
       <div class="flex justify-between text-base font-bold">
         <span>{% if txn.total_amount < 0 %}REFUND{% else %}TOTAL{% endif %}</span>
-        <span>{{ txn.total_amount|floatformat:2 }}</span>
+        <span>{% if txn.total_amount < 0 %}{{ txn.total_amount|floatformat:2|cut:"-" }}{% else %}{{ txn.total_amount|floatformat:2 }}{% endif %}</span>
       </div>
+      {% for payment in payments %}
       <div class="flex justify-between">
-        <span class="text-gray-500">Paid</span>
-        <span>{{ txn.payment_amount|floatformat:2 }}</span>
+        <span class="text-gray-500">{{ payment.get_payment_type_display }}</span>
+        <span>{{ payment.amount|floatformat:2 }}</span>
       </div>
+      {% endfor %}
       {% if change > 0 %}
-      <div class="flex justify-between">
+      <div class="flex justify-between font-semibold">
         <span class="text-gray-500">Change</span>
         <span>{{ change|floatformat:2 }}</span>
       </div>
       {% endif %}
-      <div class="flex justify-between">
-        <span class="text-gray-500">Payment</span>
-        <span>{{ txn.get_payment_type_display }}</span>
-      </div>
     </div>
 
     <p class="text-center text-sm mt-6">Thank you! Please keep this receipt.</p>

@@ -7,7 +7,7 @@ from django.db.models.functions import Coalesce
 from customers.models import Customer
 from inventory.models import Product
 
-from .models import Session, Transaction, TransactionLineItem
+from .models import Payment, Session, Transaction, TransactionLineItem
 
 
 def get_daily_sales_stats(start_date, end_date):
@@ -60,22 +60,28 @@ def get_top_products(start_date=None, end_date=None, limit=10):
 
 
 def get_payment_type_breakdown(start_date, end_date):
+    """Revenue and transaction count per tender type.
+
+    Aggregated over Payment rows rather than Transaction.total_amount: a split
+    sale contributes only the portion actually tendered to each type, which is
+    what makes card/credit shares of revenue trustworthy.
+    """
     qs = (
-        Transaction.objects.filter(
-            transaction_date__date__gte=start_date,
-            transaction_date__date__lte=end_date,
+        Payment.objects.filter(
+            transaction__transaction_date__date__gte=start_date,
+            transaction__transaction_date__date__lte=end_date,
+            transaction__status=Transaction.Status.POSTED,
         )
-        .exclude(status=Transaction.Status.VOIDED)
         .values('payment_type')
         .annotate(
-            total=Coalesce(Sum('total_amount'), Value(0, output_field=DecimalField())),
-            count=Count('id'),
+            total=Coalesce(Sum('amount'), Value(0, output_field=DecimalField())),
+            count=Count('transaction_id', distinct=True),
         )
         .order_by('-total')
     )
     result = {item['payment_type']: {'total': item['total'], 'count': item['count']} for item in qs}
-    for pt in [Transaction.PaymentType.CASH, Transaction.PaymentType.CARD,
-               Transaction.PaymentType.STORE_CREDIT, Transaction.PaymentType.OWNER_DRAW]:
+    for pt in [Payment.PaymentType.CASH, Payment.PaymentType.CARD,
+               Payment.PaymentType.STORE_CREDIT, Payment.PaymentType.OWNER_DRAW]:
         if pt.value not in result:
             result[pt.value] = {'total': 0, 'count': 0}
     return result

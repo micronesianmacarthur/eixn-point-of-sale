@@ -24,6 +24,80 @@ A running log of changes made to the project, organized by date.
 
 ---
 
+
+### Split Payment at Checkout
+- Replaced the single `payment_type`/`payment_amount` pair on `Transaction` with a new `Payment` model:
+  one row per tender per transaction, constrained by `unique_payment_type_per_transaction`
+- Added `sales` migrations `0007_payment`, `0008_backfill_payments` (converts every legacy transaction
+  into one `Payment`, skipping zero-amount rows) and `0009_remove_transaction_payment_fields`;
+  verified the forward and reverse paths against a real pre-split schema, so a rollback restores the
+  original scalar values
+- Checkout now accepts several tenders in one sale: Cash, Card and Store Credit may be combined, and
+  pressing an already-used tender type adds to that leg instead of creating a second one
+- Split payment **must cover the sale** — no unpaid balance or store tab is created. Only cash may
+  over-tender, and the over-payment is returned as change; the keypad now fills the amount box
+  instead of completing the payment outright
+- Client-sent `payments_json` is treated as untrusted: `process_checkout` recomputes the total from the
+  products and re-validates every leg. A missing or unparseable payload falls back to a single
+  full-price tender so plain single-tender sales keep working
+- Store credit requires a customer, and the credit limit and `cached_balance` now consider only the
+  credit leg; loyalty points accrue on the non-credit portion
+- Returns remain single-method, and a refund to store credit may drive `cached_balance` negative;
+  reversal follows the chosen refund type
+- `close_session` expected-drawer cash was reworked: cash tender minus change on sales, refunds
+  subtracted, owner draws excluded, and card/credit sales contributing nothing to the drawer
+- Receipts (thermal and on-screen) print one line per tender plus change, and the old `PAID`
+  summary line is gone; the transaction and customer detail pages show the same breakdown
+- `reconcile_customer_balances` and `fix_customer_credit_balances` now derive balances from signed
+  store-credit `Payment` rows
+- Tests: 44 service-level split-payment tests, plus 7 new request-level tests covering the checkout
+  page, the `payments_json` payload, server-side underpayment rejection, the fallback path, and the
+  receipt / transaction-detail / customer-detail templates. `manage.py test sales accounting inventory
+  customers` is green (77 tests — 51 split-payment plus the 6 dashboard tests merged in from `main`,
+  and 20 in the other three apps)
+- Note: the 4 failures in `users.tests.UserManagementDeleteTests` are pre-existing and unrelated —
+  they reproduce identically with these changes stashed. Root cause: that test class never creates a
+  `BusinessInfo` row, so `SetupCheckMiddleware` 302-redirects every request to `/setup/` (see the
+  gotcha in `AGENTS.md`). Adding `BusinessInfo.objects.get_or_create(business_name='Test Shop')` to
+  its `setUp` makes all 4 pass; verified, but left untouched here as it is outside this change.
+
+### Checkout UI follow-up
+- Removed a duplicated **Complete Sale** button in `sales/checkout.html` (two byte-identical blocks
+  had been left stacked one under the other); there is now exactly one
+- Removed the auto-submit in `base.html:469` that fired as soon as the tendered legs reached or
+  exceeded the subtotal. Reaching the full total is no longer treated as consent to post — the sale
+  only completes when the cashier clicks **Complete Sale**
+- Because underpayment is now normally discovered by clicking that button, `tenderError` became a
+  message string rather than a boolean flag, so each rejection says what actually went wrong:
+  no amount entered, no tender added, tendered `$X` short of the `$Y` due, or a non-cash leg that
+  would exceed the balance due (change is cash-only)
+- Cash over-tender still shows the change modal, but only after the click — confirming the modal
+  remains the second, deliberate confirmation step rather than something that appears on its own
+- Verified by executing the Alpine `posCart()` object in Node against 21 assertions covering
+  no-auto-post, click-to-post, the underpayment message, the change-modal path, card-overshoot
+  rollback, split legs, repeat-tender merging, and the Enter-key path. `manage.py test sales` is
+  green (51 tests); full suite unchanged at 4 pre-existing `users` failures
+
+### Complete Sale disabled until the sale is covered
+- **Complete Sale** is now disabled unless the tenders cover the subtotal, so the button can no longer
+  be pressed to post an incomplete sale. `canSubmit` (`base.html`) requires a non-empty cart, at least
+  one tender leg, and `remaining <= 0.004`
+- Note that `remaining` is `0` for an empty cart, so the coverage test alone would have wrongly
+  enabled the button — hence the explicit `items.length > 0` term
+- Disabled styling via Tailwind's `disabled:` variants, plus `disabled:hover:bg-blue-600` so the
+  button does not still darken on hover and look clickable
+- A disabled button with no explanation reads as broken, so a `submitHint` line appears under it
+  naming what is missing (empty cart, no payment method, or the exact shortfall). The button is never
+  disabled on the return path, where the single refund method makes tender logic inapplicable
+- The underpayment guard inside `submitCheckout()` is kept as defence in depth: it is now unreachable
+  through the UI, but it is the last line of defence if the client logic and the button ever diverge
+- Verified by executing `posCart()` in Node against 30 assertions, including the exact
+  `:disabled="!isReturn && !canSubmit"` binding for both sale and return paths, split tenders
+  enabling only on the final leg, one-cent-short staying disabled, and leg removal re-disabling.
+  Full suite unchanged at the 4 pre-existing `users` failures
+
+---
+
 ## 2026-09-30
 
 ### README — Installation & Business Configuration

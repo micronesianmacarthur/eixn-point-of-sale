@@ -4,7 +4,7 @@ from django.db import models, transaction
 from django.utils import timezone
 
 from customers.models import Customer
-from sales.models import Session, Transaction
+from sales.models import Payment, Session, Transaction
 
 from .models import Ledger, OwnerCapitalLedger
 
@@ -68,15 +68,19 @@ def process_policy_capped_owner_draw(*, owner_customer_id, operator_user, contri
         reference_receipt_id=None,
     )
 
-    Transaction.objects.create(
+    draw_txn = Transaction.objects.create(
         session=session,
         cashier=operator_user,
         customer=customer,
         total_amount=-draw_amount,
-        payment_type=Transaction.PaymentType.OWNER_DRAW,
-        payment_amount=draw_amount,
         status=Transaction.Status.POSTED,
         transaction_date=timezone.now(),
+    )
+
+    Payment.objects.create(
+        transaction=draw_txn,
+        payment_type=Payment.PaymentType.OWNER_DRAW,
+        amount=draw_amount,
     )
 
     customer.cached_balance -= draw_amount
@@ -109,15 +113,19 @@ def process_owner_contribution(*, session, owner_customer, operator_user, contri
             transaction_type=OwnerCapitalLedger.TransactionType.DRAW,
         )
 
-        Transaction.objects.create(
+        contribution_txn = Transaction.objects.create(
             session=session,
             cashier=operator_user,
             customer=customer,
             total_amount=-draw_amount,
-            payment_type=Transaction.PaymentType.OWNER_DRAW,
-            payment_amount=draw_amount,
             status=Transaction.Status.POSTED,
             transaction_date=timezone.now(),
+        )
+
+        Payment.objects.create(
+            transaction=contribution_txn,
+            payment_type=Payment.PaymentType.OWNER_DRAW,
+            amount=draw_amount,
         )
 
         customer.cached_balance -= draw_amount
