@@ -210,8 +210,9 @@
                 customerSearch: '',
                 showCustomerModal: false,
                 paymentType: 'CASH',
-                tendered: 0,
-                tenderError: false,
+                legs: [],
+                amountInput: '',
+                tenderError: '',
                 creditError: '',
                 showChangeModal: false,
                 showCashModal: false,
@@ -259,18 +260,40 @@
                     }
                     const bundlesEl = document.getElementById('bundles-data');
                     if (bundlesEl) this.bundles = JSON.parse(bundlesEl.textContent);
-                    this.$watch('customerId', (val) => {
-                        if (!val && this.paymentType === 'STORE_CREDIT') {
-                            this.paymentType = 'CASH';
+                    this.$watch('customerId', () => {
+                        // Dropping the customer invalidates any credit leg.
+                        if (!this.customerId) {
+                            this.legs = this.legs.filter(l => l.type !== 'STORE_CREDIT');
                         }
+                        this.creditError = '';
                     });
-                    this.$watch('tendered', () => { this.tenderError = false; });
-                    this.$watch('customerId', () => { this.creditError = ''; });
-                    this.$watch('paymentType', () => { this.creditError = ''; });
+                    this.$watch('amountInput', () => { this.tenderError = ''; });
+                },
+
+                // Money is summed in integer cents and each line is rounded
+                // half-up, mirroring services.to_cents server-side so the
+                // client's remaining balance matches the server's total.
+                totalCents() {
+                    return this.items.reduce((s, i) => {
+                        const line = Math.round((i.price * i.quantity) * 100);
+                        return s + line;
+                    }, 0);
                 },
 
                 get total() {
-                    return this.items.reduce((s, i) => s + i.price * i.quantity, 0);
+                    return this.totalCents() / 100;
+                },
+
+                get tenderedCents() {
+                    return this.legs.reduce((s, l) => s + l.cents, 0);
+                },
+
+                get tendered() {
+                    return this.tenderedCents / 100;
+                },
+
+                get remaining() {
+                    return (this.totalCents() - this.tenderedCents) / 100;
                 },
 
                 get itemCount() {
@@ -283,7 +306,36 @@
                 },
 
                 get changeAmount() {
-                    return Math.max(0, this.tendered - this.total);
+                    return Math.max(0, -this.remaining);
+                },
+
+                get changeDue() {
+                    return this.changeAmount > 0;
+                },
+
+                get canSubmit() {
+                    // The tenders must cover the whole subtotal. Note this is
+                    // false while the cart is empty: remaining is 0 then, so the
+                    // coverage test alone would wrongly enable the button.
+                    return this.items.length > 0 && this.legs.length > 0 && this.remaining <= 0.004;
+                },
+
+                // Why Complete Sale is disabled. A disabled button that gives no
+                // reason reads as broken, so say what is still missing.
+                get submitHint() {
+                    if (this.canSubmit) return '';
+                    if (this.items.length === 0) return 'Add items to the cart first.';
+                    if (this.legs.length === 0) return 'Add a payment method to complete the sale.';
+                    return 'Tendered $' + this.tendered.toFixed(2) +
+                        ' is less than the $' + this.total.toFixed(2) + ' balance due.';
+                },
+
+                paymentLabel(type) {
+                    return { CASH: 'Cash', CARD: 'Card', STORE_CREDIT: 'Store Credit' }[type] || type;
+                },
+
+                legAmount(leg) {
+                    return (leg.cents / 100).toFixed(2);
                 },
 
                 get filteredCustomers() {
@@ -393,42 +445,110 @@
                     }
                 },
 
-                submitCheckout() {
-                    if (this.items.length === 0) return;
-                    if (this.paymentType === 'STORE_CREDIT') {
+                // Add a tender leg. Re-tendering a type that is already present merges into
+                // that leg rather than adding a second row, matching the
+                // one-payment-per-type rule the server enforces.
+                addLeg(type) {
+                    const amount = parseFloat(this.amountInput);
+                    if (!(amount > 0)) {
+                        this.tenderError = 'Enter an amount, then tap a payment method.';
+                        return;
+                    }
+                    if (type === 'STORE_CREDIT') {
                         const cust = this.customers.find(c => c.id == this.customerId);
-                        if (!cust) return;
-                        if (!cust.is_owner && cust.credit_limit > 0 && (cust.cached_balance + this.total) > cust.credit_limit) {
-                            this.creditError = 'Credit limit exceeded. Available: $' + Math.max(0, cust.credit_limit - cust.cached_balance).toFixed(2);
+                        if (!cust) {
+                            this.creditError = 'Select a customer before adding store credit.';
                             return;
                         }
                     }
-                    if (this.paymentType !== 'STORE_CREDIT' && parseFloat(this.tendered) < this.total) {
-                        this.tenderError = true;
-                        this.$nextTick(() => this.$refs.tenderInput.focus());
+                    const cents = Math.round(amount * 100);
+                    const existing = this.legs.find(l => l.type === type);
+                    if (existing) {
+                        existing.cents += cents;
+                    } else {
+                        this.legs.push({ type, cents });
+                    }
+                    this.creditError = '';
+                    this.amountInput = '';
+
+                    // Only a cash leg can overshoot, since only cash can give
+                    // change back.
+                    if (type !== 'CASH' && this.remaining < 0) {
+                        this.legs = this.legs.filter(l => l.type !== type);
+                        this.tenderError = this.paymentLabel(type) +
+                            ' cannot exceed the balance due. Change can only be given on cash.';
                         return;
                     }
-                    document.getElementById('cart-json-input').value = JSON.stringify(this.items);
-                    document.getElementById('customer-id-input').value = this.customerId || '';
-                    document.getElementById('payment-type-input').value = this.paymentType || 'CASH';
-                    document.getElementById('return-of-input').value = '';
-                    if (this.paymentType === 'CASH') {
-                        this.cashBuffer = '0';
-                        this.showCashModal = true;
-                        return;
-                    }
-                    window.dispatchEvent(new CustomEvent('pos:checkout'));
+                    if (type === 'STORE_CREDIT') this.checkCredit();
+                    // Deliberately no auto-submit here: reaching the full total
+                    // is not consent to post the sale. The cashier confirms with
+                    // the Complete Sale button.
                 },
 
-                completeAfterChange() {
+                removeLeg(type) {
+                    this.legs = this.legs.filter(l => l.type !== type);
+                },
+
+                checkCredit() {
+                    const leg = this.legs.find(l => l.type === 'STORE_CREDIT');
+                    if (!leg) { this.creditError = ''; return; }
+                    const cust = this.customers.find(c => c.id == this.customerId);
+                    if (!cust) {
+                        this.creditError = 'Select a customer before adding store credit.';
+                        return;
+                    }
+                    if (cust.is_owner || !(cust.credit_limit > 0)) { this.creditError = ''; return; }
+                    // Check the credit leg alone, not the whole sale total.
+                    const projected = cust.cached_balance + leg.cents / 100;
+                    if (projected > cust.credit_limit) {
+                        this.creditError = 'Credit limit exceeded. Available: $' +
+                            Math.max(0, cust.credit_limit - cust.cached_balance).toFixed(2);
+                    } else {
+                        this.creditError = '';
+                    }
+                },
+
+                useExactAmount() {
+                    this.amountInput = this.remaining.toFixed(2);
+                },
+
+                fillAmount(value) {
+                    this.amountInput = Number(value).toFixed(2);
+                    this.showCashModal = false;
+                },
+
+                fillRemaining() {
+                    this.fillAmount(this.remaining);
+                },
+
+                submitCheckout() {
+                    if (this.items.length === 0) return;
+                    if (this.creditError) return;
+                    if (this.legs.length === 0) {
+                        this.tenderError = 'Add a payment method to complete the sale.';
+                        return;
+                    }
+                    if (this.remaining > 0.004) {
+                        this.tenderError = 'Tendered $' + this.tendered.toFixed(2) +
+                            ' is less than the $' + this.total.toFixed(2) + ' balance due.';
+                        return;
+                    }
+                    if (this.changeDue) {
+                        this.showChangeModal = true;
+                        return;
+                    }
+                    this.postCheckout();
+                },
+
+                postCheckout() {
                     this.showChangeModal = false;
-                    this.$nextTick(() => {
-                        document.getElementById('cart-json-input').value = JSON.stringify(this.items);
-                        document.getElementById('customer-id-input').value = this.customerId || '';
-                        document.getElementById('payment-type-input').value = this.paymentType || 'CASH';
-                        document.getElementById('return-of-input').value = '';
-                        window.dispatchEvent(new CustomEvent('pos:checkout'));
-                    });
+                    document.getElementById('cart-json-input').value = JSON.stringify(this.items);
+                    document.getElementById('customer-id-input').value = this.customerId || '';
+                    document.getElementById('payments-json-input').value = JSON.stringify(
+                        this.legs.map(l => ({ payment_type: l.type, amount: l.cents / 100 }))
+                    );
+                    document.getElementById('return-of-input').value = '';
+                    window.dispatchEvent(new CustomEvent('pos:checkout'));
                 },
 
                 processRefund() {
@@ -436,6 +556,7 @@
                     document.getElementById('cart-json-input').value = JSON.stringify(this.items);
                     document.getElementById('customer-id-input').value = this.customerId || '';
                     document.getElementById('payment-type-input').value = this.paymentType || 'CASH';
+                    document.getElementById('payments-json-input').value = '';
                     document.getElementById('return-of-input').value = this.returnTxnId;
                     window.dispatchEvent(new CustomEvent('pos:checkout'));
                 },

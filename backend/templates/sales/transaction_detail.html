@@ -45,18 +45,21 @@
         <p><strong>Customer:</strong> {{ txn.customer.name|default:"&mdash;" }}</p>
         <p><strong>Cashier:</strong> {{ txn.cashier.username }}</p>
         <p><strong>Session:</strong> #{{ txn.session_id }}</p>
-        <p><strong>Payment:</strong>
-          <span class="inline-flex px-2 py-0.5 text-xs font-medium rounded-full
-            {% if txn.payment_type == 'CASH' %}bg-green-100 text-green-700
-            {% elif txn.payment_type == 'CARD' %}bg-blue-100 text-blue-700
-            {% elif txn.payment_type == 'STORE_CREDIT' %}bg-yellow-100 text-yellow-700
-            {% elif txn.payment_type == 'OWNER_DRAW' %}bg-purple-100 text-purple-700
-            {% else %}bg-gray-100 text-gray-600{% endif %}">
-            {{ txn.get_payment_type_display }}
-          </span>
-        </p>
-        <p><strong>Total Amount:</strong> <span class="font-semibold {% if txn.total_amount < 0 %}text-green-600{% else %}text-gray-900{% endif %}">${{ txn.total_amount|floatformat:2 }}</span></p>
-        <p><strong>Payment Amount:</strong> ${{ txn.payment_amount|floatformat:2 }}</p>
+        <p><strong>Payments:</strong></p>
+        <ul class="mt-1 space-y-1">
+          {% for payment in txn.payments.all %}
+          <li class="flex items-center gap-2">
+            <span class="inline-flex px-2 py-0.5 text-xs font-medium rounded-full {{ payment.badge_class }}">
+              {{ payment.get_payment_type_display }}
+            </span>
+            <span class="font-semibold">${{ payment.amount|floatformat:2 }}</span>
+          </li>
+          {% empty %}
+          <li class="text-gray-400 text-sm">&mdash;</li>
+          {% endfor %}
+        </ul>
+        <p class="mt-2"><strong>Total Amount:</strong> <span class="font-semibold {% if txn.total_amount < 0 %}text-green-600{% else %}text-gray-900{% endif %}">${{ txn.total_amount|floatformat:2 }}</span></p>
+        <p><strong>Change:</strong> ${{ txn.change_due|floatformat:2 }}</p>
 
       </div>
     </div>

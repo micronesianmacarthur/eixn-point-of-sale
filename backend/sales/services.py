@@ -1,4 +1,4 @@
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from django.db import models, transaction
 from django.utils import timezone
@@ -10,7 +10,77 @@ from customers.services import award_loyalty_points
 from inventory.models import Product
 from inventory.services import deduct_composite
 
-from .models import Session, Transaction, TransactionLineItem
+from .models import Payment, Session, Transaction, TransactionLineItem
+
+CASH = Payment.PaymentType.CASH
+CARD = Payment.PaymentType.CARD
+STORE_CREDIT = Payment.PaymentType.STORE_CREDIT
+OWNER_DRAW = Payment.PaymentType.OWNER_DRAW
+
+CENTS = Decimal('0.01')
+ZERO = Decimal('0.00')
+
+# Types the checkout screen can tender. OWNER_DRAW is deliberately excluded: an
+# owner draw is only ever created by the accounting flows, never by a cashier.
+TENDERABLE_TYPES = (CASH, CARD, STORE_CREDIT)
+
+
+def to_cents(value):
+    return Decimal(str(value)).quantize(CENTS, rounding=ROUND_HALF_UP)
+
+
+def normalize_payments(payments, total, customer=None):
+    """Validate a split tender and return it as [(type, Decimal amount)].
+
+    The client drives an auto-completing flow, so its arithmetic is treated as
+    untrusted: every leg is re-quantized here and the split must cover `total`
+    exactly once rounding is applied. Non-cash legs may not exceed the balance
+    remaining at the point they are applied, because change can only come out of
+    a cash leg. Re-tendering a type merges into the existing leg, keeping the
+    one-row-per-type invariant rather than dead-ending the cashier.
+    """
+    legs = []
+    remaining = total
+
+    for entry in payments:
+        payment_type = entry.get('payment_type')
+        if payment_type not in TENDERABLE_TYPES:
+            raise ValueError(f'Invalid payment type: {payment_type}')
+
+        amount = to_cents(entry.get('amount', ZERO))
+        if amount <= ZERO:
+            raise ValueError('Payment amount must be greater than zero.')
+
+        if payment_type == STORE_CREDIT and customer is None:
+            raise ValueError('Store credit requires a customer.')
+
+        existing = next((i for i, (t, _) in enumerate(legs) if t == payment_type), None)
+        if existing is not None:
+            amount += legs[existing][1]
+
+        if amount > remaining and payment_type != CASH:
+            raise ValueError(
+                f'{Payment.PaymentType(payment_type).label} payment of ${amount:.2f} '
+                f'exceeds the ${remaining:.2f} balance due. Change can only be given on cash.'
+            )
+
+        if existing is not None:
+            legs[existing] = (payment_type, amount)
+        else:
+            legs.append((payment_type, amount))
+        remaining -= amount
+
+    if not legs:
+        raise ValueError('At least one payment is required.')
+
+    tendered = sum((amount for _, amount in legs), ZERO)
+    if tendered < total:
+        raise ValueError(
+            f'Payments total ${tendered:.2f} but the sale is ${total:.2f} — '
+            f'${total - tendered:.2f} still due.'
+        )
+
+    return legs
 
 
 @transaction.atomic
@@ -34,7 +104,7 @@ def process_checkout(*, session_id, items, payments, customer_id=None, operator_
         qty = Decimal(str(item['quantity']))
         price_override = item.get('price_override')
         price = Decimal(str(price_override)) if price_override is not None else (product.discount_price if product.is_on_sale and product.discount_price is not None else product.retail_price)
-        line_total = price * qty
+        line_total = to_cents(price * qty)
         total += line_total
 
         if not product.is_service and product.stock_quantity < qty:
@@ -47,19 +117,26 @@ def process_checkout(*, session_id, items, payments, customer_id=None, operator_
             'price_charged': price,
         })
 
-    payment_type = payments[0]['payment_type'] if payments else 'CASH'
-    payment_amount = Decimal(str(payments[0]['amount'])) if payments else total
+    if payments:
+        legs = normalize_payments(payments, total, customer=customer)
+    else:
+        legs = [(CASH, total)]
+
+    credit_amount = sum((amount for t, amount in legs if t == STORE_CREDIT), ZERO)
 
     txn = Transaction.objects.create(
         session=session,
         cashier=operator_user or session.opened_by,
         customer=customer,
         total_amount=total,
-        payment_type=payment_type,
-        payment_amount=payment_amount,
         status=Transaction.Status.POSTED,
         transaction_date=timezone.now(),
     )
+
+    Payment.objects.bulk_create([
+        Payment(transaction=txn, payment_type=t, amount=amount)
+        for t, amount in legs
+    ])
 
     for ti in txn_items:
         TransactionLineItem.objects.create(
@@ -72,15 +149,19 @@ def process_checkout(*, session_id, items, payments, customer_id=None, operator_
         deduct_composite(ti['product'].id, ti['quantity'])
 
     if customer:
-        if payment_type == Transaction.PaymentType.STORE_CREDIT and not customer.is_owner and customer.credit_limit > 0:
-            projected = customer.cached_balance + total
+        # Only the credit leg lands on the tab — a $60 sale split $40 cash +
+        # $20 credit must check and grow the balance by $20, not $60.
+        if credit_amount > ZERO and not customer.is_owner and customer.credit_limit > 0:
+            projected = customer.cached_balance + credit_amount
             if projected > customer.credit_limit:
-                available = max(Decimal('0.00'), customer.credit_limit - customer.cached_balance)
+                available = max(ZERO, customer.credit_limit - customer.cached_balance)
                 raise ValueError(f'Store credit denied — projected balance ${projected:.2f} exceeds credit limit ${customer.credit_limit:.2f}. Only ${available:.2f} available.')
-        if payment_type == Transaction.PaymentType.STORE_CREDIT:
-            customer.cached_balance += total
+        if credit_amount > ZERO:
+            customer.cached_balance += credit_amount
             customer.save(update_fields=['cached_balance'])
-        award_loyalty_points(customer_id=customer.id, total=total, payment_type=payment_type)
+        # Loyalty is earned on what was actually paid in real money, so a fully
+        # credit sale still scores zero (matching the pre-split rule).
+        award_loyalty_points(customer_id=customer.id, amount=total - credit_amount)
 
     write_ledger_entry(
         session=session,
@@ -113,9 +194,10 @@ def void_transaction(*, txn_id, operator_user=None):
                 stock_quantity=models.F('stock_quantity') + item.quantity_sold
             )
 
-    if txn.customer and txn.payment_type == Transaction.PaymentType.STORE_CREDIT:
+    credit_amount = txn.payment_amount_for(STORE_CREDIT)
+    if txn.customer and credit_amount > ZERO:
         Customer.objects.filter(id=txn.customer_id).update(
-            cached_balance=models.F('cached_balance') - txn.total_amount
+            cached_balance=models.F('cached_balance') - credit_amount
         )
 
     Ledger.objects.create(
@@ -140,15 +222,28 @@ def process_return(*, original_txn_id, return_items, refund_amount, refund_type,
     if original_txn.status != Transaction.Status.POSTED:
         raise ValueError('Can only return a posted transaction.')
 
+    refund_amount = to_cents(refund_amount)
+    if refund_amount <= ZERO:
+        raise ValueError('Refund amount must be greater than zero.')
+
+    if refund_type not in TENDERABLE_TYPES:
+        raise ValueError(f'Invalid refund type: {refund_type}')
+    if refund_type == STORE_CREDIT and not original_txn.customer:
+        raise ValueError('Cannot refund to store credit without a customer on the original transaction.')
+
     return_txn = Transaction.objects.create(
         session=original_txn.session,
         cashier=operator_user or original_txn.cashier,
         customer=original_txn.customer,
-        total_amount=-Decimal(str(refund_amount)),
-        payment_type=refund_type,
-        payment_amount=Decimal(str(refund_amount)),
+        total_amount=-refund_amount,
         status=Transaction.Status.POSTED,
         transaction_date=timezone.now(),
+    )
+
+    Payment.objects.create(
+        transaction=return_txn,
+        payment_type=refund_type,
+        amount=refund_amount,
     )
 
     for item in return_items:
@@ -163,7 +258,13 @@ def process_return(*, original_txn_id, return_items, refund_amount, refund_type,
             stock_quantity=models.F('stock_quantity') + item['quantity']
         )
 
-    if original_txn.customer and original_txn.payment_type == Transaction.PaymentType.STORE_CREDIT:
+    # Keyed off the refund type, not the original sale's payment types. Before
+    # the split-payment change this read the original transaction's
+    # payment_type, which refunded a credit sale to cash while also cancelling
+    # the tab — paying the customer out twice. Refunding over an existing credit
+    # leg is allowed; it just drives cached_balance negative, which the model
+    # permits.
+    if original_txn.customer and refund_type == STORE_CREDIT:
         Customer.objects.filter(id=original_txn.customer_id).update(
             cached_balance=models.F('cached_balance') - refund_amount
         )
@@ -184,11 +285,25 @@ def process_return(*, original_txn_id, return_items, refund_amount, refund_type,
 def close_session(*, session_id, actual_cash, closed_by_user):
     session = Session.objects.select_for_update().get(id=session_id, status=Session.Status.OPEN)
 
-    total_revenue = sum(
-        (t.total_amount for t in session.transactions.exclude(status=Transaction.Status.VOIDED)),
-        session.starting_cash.__class__(0)
+    # Only cash that physically reaches the drawer belongs here. Card and store
+    # credit never do, and change given back out of the drawer must be netted
+    # off. Each transaction's impact is signed so refunds and owner draws reduce
+    # expected cash instead of adding to it.
+    cash_impact = ZERO
+    txns = (
+        session.transactions
+        .exclude(status=Transaction.Status.VOIDED)
+        .exclude(total_amount=ZERO)
+        .prefetch_related('payments')
     )
-    expected_cash = session.starting_cash + total_revenue
+    for t in txns:
+        cash_tendered = t.payment_amount_for(CASH)
+        if cash_tendered == ZERO:
+            continue
+        impact = cash_tendered - t.change_due if t.total_amount > ZERO else -cash_tendered
+        cash_impact += impact
+
+    expected_cash = session.starting_cash + cash_impact
 
     session.closed_by = closed_by_user
     session.end_time = timezone.now()
@@ -210,18 +325,26 @@ def process_customer_payment(*, customer_id, amount, payment_type, session_id, o
     session = Session.objects.select_for_update().get(id=session_id)
     customer = Customer.objects.select_for_update().get(id=customer_id)
 
-    customer.cached_balance -= Decimal(str(amount))
+    amount = to_cents(amount)
+    if amount <= ZERO:
+        raise ValueError('Payment amount must be greater than zero.')
+
+    customer.cached_balance -= amount
     customer.save(update_fields=['cached_balance'])
 
     txn = Transaction.objects.create(
         session=session,
         cashier=operator_user or session.opened_by,
         customer=customer,
-        total_amount=-Decimal(str(amount)),
-        payment_type=payment_type,
-        payment_amount=Decimal(str(amount)),
+        total_amount=-amount,
         status=Transaction.Status.POSTED,
         transaction_date=timezone.now(),
+    )
+
+    Payment.objects.create(
+        transaction=txn,
+        payment_type=payment_type,
+        amount=amount,
     )
 
     Ledger.objects.create(
@@ -296,11 +419,17 @@ def batch_offline_recovery(*, rows, operator_user=None):
             session=session,
             cashier=row.get('cashier') or operator_user or session.opened_by,
             customer=row.get('customer'),
-            total_amount=Decimal(str(row['total_amount'])),
-            payment_type=row.get('payment_type', Transaction.PaymentType.CASH),
-            payment_amount=Decimal(str(row['payment_amount'])),
+            total_amount=to_cents(row['total_amount']),
             status=Transaction.Status.POSTED,
             transaction_date=row['transaction_date'],
+        )
+
+        # Offline recovery is single-tender per row — the recovery grid has one
+        # payment_type select per row, so there is no split to reconstruct.
+        Payment.objects.create(
+            transaction=txn,
+            payment_type=row.get('payment_type') or CASH,
+            amount=to_cents(row['payment_amount']),
         )
 
         for item in row['items']:
@@ -313,9 +442,10 @@ def batch_offline_recovery(*, rows, operator_user=None):
             )
             deduct_composite(item['product_id'], Decimal(str(item['quantity'])))
 
-        if txn.customer and txn.payment_type == Transaction.PaymentType.STORE_CREDIT:
+        credit_amount = txn.payment_amount_for(STORE_CREDIT)
+        if txn.customer and credit_amount > ZERO:
             Customer.objects.filter(id=txn.customer_id).update(
-                cached_balance=models.F('cached_balance') + txn.total_amount
+                cached_balance=models.F('cached_balance') + credit_amount
             )
 
     return session

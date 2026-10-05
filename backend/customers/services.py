@@ -6,13 +6,20 @@ from .models import Customer
 
 
 @transaction.atomic
-def award_loyalty_points(*, customer_id, total, payment_type):
-    if payment_type == 'STORE_CREDIT':
+def award_loyalty_points(*, customer_id, amount):
+    """Award 1 point per $10 actually paid in real money.
+
+    Callers pass the non-credit portion of a sale's total, so a fully
+    store-credit sale still earns nothing — the rule the old `payment_type`
+    check used to express.
+    """
+    amount = Decimal(str(amount))
+    if amount <= 0:
         return 0
     customer = Customer.objects.select_for_update().get(id=customer_id)
     if not customer.loyalty_enabled:
         return 0
-    points = int(Decimal(str(total)) / Decimal('10'))
+    points = int(amount / Decimal('10'))
     Customer.objects.filter(id=customer_id).update(
         loyalty_points=models.F('loyalty_points') + points
     )

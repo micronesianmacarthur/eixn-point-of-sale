@@ -34,8 +34,15 @@ from .analytics import (
     get_weekly_comparison,
 )
 from .cash_count import CURRENCY_DEFS, calculate_totals, calculate_removal
-from .models import Session, Transaction, TransactionLineItem
-from .services import batch_offline_recovery, close_session, process_checkout, process_return, void_transaction
+from .models import Payment, Session, Transaction, TransactionLineItem
+from .services import (
+    batch_offline_recovery,
+    close_session,
+    process_checkout,
+    process_return,
+    to_cents,
+    void_transaction,
+)
 
 
 class DashboardView(LoginRequiredMixin, TemplateView):
@@ -453,7 +460,10 @@ class CheckoutView(LoginRequiredMixin, TemplateView):
                         'price_charged': float(li.price_at_sale),
                     })
                 context['return_items'] = items
-                context['return_payment_type'] = txn.payment_type
+                context['return_payment_type'] = (
+                txn.payments.order_by('payment_type').values_list('payment_type', flat=True).first()
+                or Payment.PaymentType.CASH
+            )
                 context['return_customer_id'] = txn.customer_id or ''
             except Transaction.DoesNotExist:
                 pass
@@ -515,6 +525,33 @@ class CartUpdateQtyView(LoginRequiredMixin, View):
 
 
 class CheckoutCompleteView(LoginRequiredMixin, View):
+    @staticmethod
+    def _parse_payments(request):
+        """Return the posted tender legs, or None to signal 'use the fallback'.
+
+        Only the shape is checked here. Whether the legs actually cover the sale
+        is decided in process_checkout, which recomputes the total from the
+        products rather than trusting the cart the client posted.
+        """
+        raw = request.POST.get('payments_json')
+        if not raw:
+            return None
+        try:
+            parsed = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return None
+        if not isinstance(parsed, list) or not parsed:
+            return None
+        legs = []
+        for entry in parsed:
+            if not isinstance(entry, dict):
+                return None
+            legs.append({
+                'payment_type': entry.get('payment_type'),
+                'amount': entry.get('amount'),
+            })
+        return legs
+
     def post(self, request):
         cart_json = request.POST.get('cart_json')
         if cart_json:
@@ -530,7 +567,7 @@ class CheckoutCompleteView(LoginRequiredMixin, View):
             messages.error(request, 'Cart is empty.')
             return HttpResponseRedirect(reverse_lazy('sales:checkout'))
         customer_id = request.POST.get('customer_id')
-        payment_type = request.POST.get('payment_type', 'CASH')
+        payment_type = request.POST.get('payment_type', Payment.PaymentType.CASH)
         return_of = request.POST.get('return_of')
         try:
             if return_of:
@@ -543,7 +580,7 @@ class CheckoutCompleteView(LoginRequiredMixin, View):
                     }
                     for i in cart
                 ]
-                refund_amount = sum(Decimal(str(i['price'])) * Decimal(str(i['quantity'])) for i in cart)
+                refund_amount = sum(to_cents(Decimal(str(i['price'])) * Decimal(str(i['quantity']))) for i in cart)
                 txn = process_return(
                     original_txn_id=int(return_of),
                     return_items=return_items,
@@ -560,7 +597,17 @@ class CheckoutCompleteView(LoginRequiredMixin, View):
                     messages.error(request, 'No active session.')
                     return HttpResponseRedirect(reverse_lazy('sales:checkout'))
                 items = [{'product_id': i['product_id'], 'quantity': i['quantity']} for i in cart]
-                payments = [{'amount': sum(Decimal(str(i['price'])) * i['quantity'] for i in cart), 'payment_type': payment_type}]
+
+                # The split tender comes from the client, but its amounts are
+                # not trusted: process_checkout re-validates every leg against
+                # the server-computed total. A missing or unparseable
+                # payments_json falls back to a single full-price payment so a
+                # plain single-tender sale keeps working.
+                payments = self._parse_payments(request)
+                if payments is None:
+                    client_total = sum(to_cents(Decimal(str(i['price'])) * Decimal(str(i['quantity']))) for i in cart)
+                    payments = [{'amount': client_total, 'payment_type': payment_type}]
+
                 txn = process_checkout(session_id=active_session.id, items=items, payments=payments, customer_id=customer_id or None, operator_user=request.user)
                 messages.success(request, f'Transaction #{txn.id} completed.')
                 async_task('core.tasks.print_receipt', txn.id)
@@ -590,7 +637,8 @@ class ReceiptView(LoginRequiredMixin, DetailView):
             })
         context['line_items'] = items
         context['business'] = BusinessInfo.objects.first()
-        context['change'] = max(Decimal('0.00'), self.object.payment_amount - self.object.total_amount)
+        context['payments'] = self.object.payments.all()
+        context['change'] = self.object.change_due
         return context
 
 
@@ -687,11 +735,18 @@ class ReturnSaleView(LoginRequiredMixin, View):
                 for item in original.items.all()
             ]
             refund_amount = original.total_amount
+            # Refund method defaults to the original sale's dominant leg. A
+            # cashier can override it in the return form; store credit is only
+            # offered when the original had a customer attached.
+            default_refund_type = (
+                original.payments.order_by('-amount').values_list('payment_type', flat=True).first()
+                or Payment.PaymentType.CASH
+            )
             txn = process_return(
                 original_txn_id=pk,
                 return_items=return_items,
                 refund_amount=refund_amount,
-                refund_type=original.payment_type,
+                refund_type=default_refund_type,
                 operator_user=request.user,
             )
             messages.success(request, f'Return #{txn.id} created for original transaction #{pk}.')

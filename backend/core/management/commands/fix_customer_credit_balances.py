@@ -1,15 +1,19 @@
 from decimal import Decimal
 
 from django.core.management.base import BaseCommand
-from django.db.models import DecimalField, F, Sum, Value
+from django.db.models import Case, DecimalField, F, Sum, Value, When
 from django.db.models.functions import Coalesce
 
 from customers.models import Customer
-from sales.models import Transaction
+from sales.models import Payment, Transaction
+from sales.services import to_cents
+
+# VOIDED transactions must not contribute; everything else (POSTED, DRAFT) does.
+ACTIVE_STATUSES = [s for s in Transaction.Status.values if s != Transaction.Status.VOIDED]
 
 
 class Command(BaseCommand):
-    help = 'Recalculate cached_balance from STORE_CREDIT transactions only (fix for credit balance bug)'
+    help = 'Recalculate cached_balance from STORE_CREDIT payment legs only (fix for credit balance bug)'
 
     def add_arguments(self, parser):
         parser.add_argument('--fix', action='store_true', help='Apply corrections to cached_balance')
@@ -20,13 +24,26 @@ class Command(BaseCommand):
         corrected = unchanged = 0
 
         for customer in customers:
-            correct_balance = (
-                Transaction.objects.filter(
-                    customer=customer,
-                    payment_type=Transaction.PaymentType.STORE_CREDIT,
+            # Sum the STORE_CREDIT payment legs, signed by transaction
+            # direction: credit sales grow the tab, refunds paid onto the tab
+            # shrink it. Sums the whole transaction total instead, this cannot
+            # account for a sale split cash + credit.
+            correct_balance = to_cents(
+                Payment.objects.filter(
+                    transaction__customer=customer,
+                    transaction__status__in=ACTIVE_STATUSES,
+                    payment_type=Payment.PaymentType.STORE_CREDIT,
                 )
-                .exclude(status=Transaction.Status.VOIDED)
-                .aggregate(total=Coalesce(Sum('total_amount'), Value(Decimal('0.00'), output_field=DecimalField())))['total']
+                .annotate(
+                    signed=Case(
+                        When(transaction__total_amount__lt=0, then=-F('amount')),
+                        default=F('amount'),
+                        output_field=DecimalField(),
+                    )
+                )
+                .aggregate(
+                    total=Coalesce(Sum('signed'), Value(Decimal('0.00'), output_field=DecimalField()))
+                )['total']
             )
 
             delta = customer.cached_balance - correct_balance
