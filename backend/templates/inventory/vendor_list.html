@@ -68,7 +68,7 @@
   </div>
 {% endif %}
 
-<div id="vendorModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 hidden">
+<div id="vendorModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 hidden">
   <div class="bg-gray-100 rounded-xl shadow-2xl w-full max-w-md mx-4">
     <form method="post" action="{% url 'inventory:vendor_create' %}">
       {% csrf_token %}
@@ -102,7 +102,7 @@
   </div>
 </div>
 
-<div x-show="showEditModal" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+<div x-show="showEditModal" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
   <div class="bg-gray-100 rounded-xl shadow-2xl w-full max-w-lg mx-4">
     <form method="post" x-bind:action="editAction">
       {% csrf_token %}
@@ -136,7 +136,7 @@
   </div>
 </div>
 
-<div x-show="showDeleteModal" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+<div x-show="showDeleteModal" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
   <div class="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4">
     <form method="post" x-bind:action="deleteAction">
       {% csrf_token %}

@@ -36,13 +36,13 @@
   <div class="bg-gradient-to-br from-violet-500 to-violet-600 rounded-xl shadow-md p-5 text-white">
     <div class="flex items-center justify-between">
       <div>
-        <div class="text-violet-100 text-xs font-semibold uppercase tracking-wider">Store Credit / Owner</div>
+        <div class="text-violet-100 text-xs font-semibold uppercase tracking-wider">Account / Owner</div>
         <div class="text-2xl font-bold mt-1">${{ payment_breakdown.STORE_CREDIT.total|add:payment_breakdown.OWNER_DRAW.total|floatformat:2 }}</div>
       </div>
       <i class="fas fa-hand-holding-usd text-3xl text-violet-300"></i>
     </div>
     <div class="mt-3 flex space-x-3 text-xs text-violet-200">
-      <span>Credit: ${{ payment_breakdown.STORE_CREDIT.total|floatformat:2 }}</span>
+      <span>Account: ${{ payment_breakdown.STORE_CREDIT.total|floatformat:2 }}</span>
       <span>&middot;</span>
       <span>Owner: ${{ payment_breakdown.OWNER_DRAW.total|floatformat:2 }}</span>
     </div>
@@ -176,7 +176,7 @@
 </div>
 {% endblock %}
 {% block extra_js %}
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.8.0/Chart.min.js" crossorigin="anonymous"></script>
+<script src="{% static 'vendor/chartjs/Chart.min.js' %}"></script>
 <script>
 new Chart(document.getElementById('revenueChart'), {
     type: 'line',
@@ -207,7 +207,7 @@ new Chart(document.getElementById('revenueChart'), {
 new Chart(document.getElementById('paymentPieChart'), {
     type: 'doughnut',
     data: {
-        labels: ['Cash', 'Card', 'Store Credit', 'Owner Draw'],
+        labels: ['Cash', 'Card', 'Account', 'Owner Draw'],
         datasets: [{
             data: [
                 {{ payment_breakdown.CASH.total|floatformat:0 }},

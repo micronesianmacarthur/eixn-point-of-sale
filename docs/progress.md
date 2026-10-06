@@ -4,6 +4,81 @@ A running log of changes made to the project, organized by date.
 
 ---
 
+## 2026-10-06
+
+### Offline-first frontend: local Tailwind, vendored assets, teal/ink theme (`core/theming`)
+- Removed every CDN tag. `cdn.tailwindcss.com` was the root problem: the till's entire UI depended
+  on a shop with working internet, so a dropped connection meant an unstyled, non-interactive
+  register. The Play CDN also compiles per request, and it silently ships **v3 semantics** — which
+  hid the incompatibilities fixed below
+- Added root Node tooling (`package.json`, `package-lock.json`, `frontend/app.css`) using the
+  standalone Tailwind v4 CLI (`@tailwindcss/cli`), plus `scripts/vendor-static.mjs`. `npm run build`
+  compiles and vendors, `npm run watch` rebuilds on save. The compiled stylesheet and vendored
+  libraries are **committed** under `backend/static/`, so the runtime — the Alpine-based image, which
+  ships no Node — needs neither Node nor network
+- Vendored `htmx@1.9.12`, `alpine@3.14.8`, `chart.js@2.8.0` (pinned: the dashboard chart is written
+  against the 2.x API), and a latin-subset variable Inter woff2 (~47 kB) for `font-display: swap`.
+  Font Awesome needs **two** stylesheets, not one: `css/fontawesome.min.css` holds the ~1950
+  `.fa-*:before { content }` glyph rules, while `css/solid.min.css` is only the `@font-face` for the
+  free solid family plus `.fas { font-weight: 900 }`. Shipping `solid.min.css` alone renders every
+  icon blank — they came from `all.js` before, which injects the glyphs itself. Both are linked, and
+  only `fas` is used (71 icons, no `data-fa-*`), so the regular/brands webfonts stay out. The
+  `format("truetype")` alternate in FA's `@font-face src` is pruned at vendor time: we ship the
+  153 kB woff2, not the ~600 kB ttf, and there is no reason for a stylesheet to reference a file
+  that is not there
+- Theme (`frontend/app.css`): teal `brand-*` and warm-neutral `ink-*` ramps, Inter, low-contrast
+  `shadow-card` / `shadow-pop`, tabular numerals on tables, shared `.card` / `.btn*` / `.field`
+  components, themed flash messages, a themed login page, and an active-section highlight in the
+  sidebar that the shell never had
+- **Legacy scale aliases** in `@theme`: Tailwind's stock `gray` / `blue` / `red` / `green` / `yellow`
+  steps are remapped onto `ink` / `brand` / the semantic ramps. ~30 templates were written against
+  those names, so aliasing re-skins every interior screen at once instead of leaving them on the old
+  blue-grey while only the shell is themed. New code should prefer `brand-*` / `ink-*`; the aliases
+  exist so untouched templates match
+- **v3 → v4 utility fixes**, found by checking every utility referenced by the templates against the
+  compiled CSS (356 referenced, all present):
+  - `bg-black bg-opacity-50` → `bg-black/50` in 29 modal backdrops. v4 dropped the `*-opacity-*`
+    utilities, so without this every scrim would have gone fully opaque
+  - `[x-cloak] { display: none !important }` moved from an inline `<style>` into the compiled sheet
+    (that inline block only existed because the Play CDN could not compile it)
+  - `users/login.html` had an `@apply` block inside `<style>` — only ever valid under the Play CDN,
+    and dead under a compiled stylesheet. Removed, since the inputs already carry those utilities
+- Added `scripts/verify-static.mjs`, run as the last step of `npm run build`, because all four of
+  these failures are silent — the page still returns 200, it just arrives unstyled or with blank
+  icons. It checks that no template loads a remote asset, that every `fas fa-*` icon in the
+  templates has a glyph rule in the vendored Font Awesome, that every `url(...)` in a vendored
+  stylesheet resolves to a file that exists, and that every utility class the templates use is
+  actually present in the compiled CSS. It now passes: 47 templates, 71 icons, 590 class tokens.
+  Removing one vendored font is enough to make it fail, which is the point
+- Static serving in production: added `whitenoise==6.12` (`STATIC_ROOT`, middleware directly after
+  `SecurityMiddleware`) because the container runs with `DEBUG=False` and had no way to serve
+  `/static/` once the CDN tags were gone. Kept `StaticFilesStorage` rather than the manifest variant
+  on purpose, so a missed `collectstatic` degrades to a stale sheet instead of a 500 on every page
+- `docker/entrypoint.sh` now warns when `staticfiles/css/app.css` is missing after `collectstatic`,
+  since that combination fails silently: 200 responses with no styling
+- Cart copy: the tender button is now **Account** (was "Credit"), and everything a cashier sees in the
+  cart/checkout flow that used to say "Store Credit" now says **Account** — `paymentLabel()` in the
+  checkout Alpine component (which drives both the leg breakdown and the overshoot message, "Account
+  cannot exceed the balance due"), the Payment Type `<select>` in `sales/partials/cart_summary.html`
+  (that partial is what re-renders `#cart-panel` after every HTMX cart change, so the two panels
+  disagreed after the button rename), the Refund Method `<option>` in `sales/checkout.html`, and the
+  two "Select a customer before adding store credit." validation strings, and the dashboard's violet
+  card — title "Store Credit / Owner", its "Credit:" sub-line (now "Account / Owner" / "Account:",
+  matching the Cash and Card cards beside it), plus the payment-pie legend so the same bucket is not
+  called two different things on one screen. The rationale from the till: "Store credit" reads as
+  loyalty points the shop owes the customer. The enum value `STORE_CREDIT` is unchanged everywhere —
+  this is a label-only change. Remaining "Store Credit" labels: `zreport_content`,
+  `session_close`, and `sales/offline_recovery.html`
+- `.gitignore`: `node_modules/` and `backend/staticfiles/`
+- Verified in production mode (`DEBUG=False`, assets via WhiteNoise) that `/login/`,
+  `/sales/dashboard/`, `/sales/checkout/`, `/inventory/` and `/customers/` render with **zero
+  external references**, that every asset referenced from the HTML *and from inside the
+  stylesheets* (fonts) returns 200, and that the served Font Awesome CSS carries its 1950 glyph
+  rules. `manage.py check` clean (the previous
+  `staticfiles.W004` warning is gone now that `backend/static` exists), `makemigrations --check`
+  clean, `sales inventory` 98 tests pass, full suite 110 tests with only the 4 documented
+  `users.tests.UserManagementDeleteTests` baseline failures
+
 ## 2026-10-05
 
 ### Product soft-delete: archive instead of hard delete (`inventory/delete-product`)

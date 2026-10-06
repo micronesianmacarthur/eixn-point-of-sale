@@ -154,7 +154,7 @@
                     <button type="button" @click="addLeg('STORE_CREDIT')"
                             class="py-2 text-sm font-medium rounded-lg border transition"
                             :class="legs.some(l => l.type === 'STORE_CREDIT') ? 'bg-yellow-100 border-yellow-300 text-yellow-800' : 'bg-white border-gray-300 text-gray-700 hover:border-yellow-400'">
-                      Credit
+                      Account
                     </button>
                   </div>
                 </div>
@@ -195,7 +195,7 @@
                   <select x-model="paymentType" class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                     <option value="CASH">Cash</option>
                     <option value="CARD">Card</option>
-                    <option value="STORE_CREDIT" x-show="customerId !== ''">Store Credit</option>
+                    <option value="STORE_CREDIT" x-show="customerId !== ''">Account</option>
                   </select>
                 </div>
 
@@ -219,7 +219,7 @@
     </div>
   </div>
 
-  <div x-show="pendingWeightProduct" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+  <div x-show="pendingWeightProduct" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
     <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm mx-4 p-6">
       <h3 class="text-lg font-semibold text-gray-800 mb-2">Enter Weight</h3>
       <p class="text-sm text-gray-600 mb-4" x-text="'Weight for ' + (pendingWeightProduct ? pendingWeightProduct.name : '')"></p>
@@ -233,7 +233,7 @@
     </div>
   </div>
 
-  <div x-show="showCustomerModal" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+  <div x-show="showCustomerModal" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
     <div class="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4">
       <div class="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
         <h3 class="font-semibold text-gray-800">Select Customer</h3>
@@ -267,7 +267,7 @@
 
   {% include 'sales/partials/cash_modal.html' %}
 
-  <div x-show="showChangeModal" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+  <div x-show="showChangeModal" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
     <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-8 text-center">
       <h2 class="text-lg font-semibold text-gray-800 mb-2">Give Change</h2>
       <p class="text-sm text-gray-500 mb-4" x-text="'Total: $' + total.toFixed(2) + '  Tendered: $' + tendered.toFixed(2)"></p>
@@ -300,7 +300,7 @@
 {% endif %}
 
 {% if not active_session %}
-<div id="sessionModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+<div id="sessionModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
   <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm mx-4">
     <form method="post" action="{% url 'sales:session_create' %}">
       {% csrf_token %}

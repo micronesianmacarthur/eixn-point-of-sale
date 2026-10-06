@@ -1,3 +1,10 @@
+# Front-end build tooling (the built CSS and vendored assets under
+# backend/static ARE committed, so a deployed till needs no node)
+node_modules/
+
+# Collected static files (whitenoise serves these in production)
+backend/staticfiles/
+
 # Python-generated files
 __pycache__/
 *.py[oc]

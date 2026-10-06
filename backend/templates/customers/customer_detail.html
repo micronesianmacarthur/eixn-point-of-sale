@@ -101,7 +101,7 @@
   </div>
 </div>
 
-<div id="paymentOverlay" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 hidden">
+<div id="paymentOverlay" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 hidden">
   <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm mx-4">
     <form method="post" action="{% url 'customers:customer_payment' customer.pk %}">
       {% csrf_token %}
@@ -124,7 +124,7 @@
   </div>
 </div>
 
-<div x-show="showEdit" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50" x-cloak>
+<div x-show="showEdit" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" x-cloak>
   <div class="bg-gray-100 rounded-xl shadow-2xl w-full max-w-md mx-4">
     <form method="post" :action="`/customers/${editId}/edit/`">
       {% csrf_token %}

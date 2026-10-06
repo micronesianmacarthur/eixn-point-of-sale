@@ -149,7 +149,7 @@
     </div>
   </div>
 
-  <div id="bundleEditModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 hidden">
+  <div id="bundleEditModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 hidden">
     <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4">
       <form method="post" id="bundleEditForm"
             x-data="{
@@ -254,7 +254,7 @@
     </div>
   </div>
 
-  <div id="bundleDeleteModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 hidden">
+  <div id="bundleDeleteModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 hidden">
     <div class="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4">
       <form method="post" id="bundleDeleteForm">
         {% csrf_token %}
