@@ -46,6 +46,10 @@ AUTHENTICATION_BACKENDS = ['users.backends.PinOrPasswordBackend']
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    # Serves the vendored CSS/JS/fonts. Without it a deployed (DEBUG=False)
+    # container 404s every asset, which with the CDN tags removed would leave
+    # the till unstyled until it was put back online.
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -149,6 +153,18 @@ PRINTER_CASH_DRAWER = env.bool('PRINTER_CASH_DRAWER', True)
 
 STATIC_URL = 'static/'
 STATICFILES_DIRS = [BASE_DIR / 'static']
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+STORAGES = {
+    'default': {
+        'BACKEND': 'django.core.files.storage.FileSystemStorage',
+    },
+    'staticfiles': {
+        # Deliberately not the manifest variant: the built CSS is committed, but
+        # a missing collectstatic would then 500 every page instead of just
+        # serving a stale sheet.
+        'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage',
+    },
+}
 
 MEDIA_URL = 'media/'
 MEDIA_ROOT = BASE_DIR / 'media'

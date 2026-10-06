@@ -4,7 +4,7 @@
 {% block content %}
 
 {% if not active_session %}
-<div id="sessionModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+<div id="sessionModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
   <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm mx-4">
     <form method="post" action="{% url 'sales:session_create' %}">
       {% csrf_token %}
@@ -145,7 +145,7 @@
         <input type="hidden" name="vendor" value="{{ selected_po.vendor_id }}">
         {% endif %}
 
-        <div x-show="showVendorModal" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+        <div x-show="showVendorModal" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div class="bg-gray-100 rounded-xl shadow-2xl w-full max-w-sm mx-4">
             <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
               <h3 class="text-lg font-semibold text-gray-800">New Vendor</h3>
@@ -346,7 +346,7 @@
       </div>
     </div>
 
-    <div x-show="showCategoryModal" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+    <div x-show="showCategoryModal" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
       <div class="bg-gray-100 rounded-xl shadow-2xl w-full max-w-sm mx-4">
         <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
           <h3 class="text-lg font-semibold text-gray-800">New Category</h3>

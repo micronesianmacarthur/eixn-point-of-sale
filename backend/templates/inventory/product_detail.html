@@ -18,7 +18,7 @@
               class="inline-flex items-center px-4 py-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 shadow-sm rounded-lg transition">
         <i class="fas fa-edit mr-1"></i> Edit Product
       </button>
-      <div x-show="show" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50" x-cloak>
+      <div x-show="show" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" x-cloak>
         <div class="bg-gray-100 rounded-xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
           <form method="post" action="{% url 'inventory:product_update' product.pk %}">
             {% csrf_token %}

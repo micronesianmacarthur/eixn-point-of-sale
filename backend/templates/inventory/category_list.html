@@ -11,7 +11,7 @@
     <i class="fas fa-plus mr-1"></i> New Category
   </button>
 
-  <div x-show="showCreateModal" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+  <div x-show="showCreateModal" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
     <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm mx-4 p-6">
       <h4 class="text-base font-semibold text-gray-800 mb-4">New Category</h4>
       <form @submit.prevent="
@@ -69,7 +69,7 @@
                         class="text-red-600 hover:text-red-800 text-xs font-medium"><i class="fas fa-trash mr-1"></i>Delete</button>
               </div>
 
-              <div x-show="editMode" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+              <div x-show="editMode" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
                 <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm mx-4 p-6">
                   <h4 class="text-base font-semibold text-gray-800 mb-4">Edit Category</h4>
                   <form method="post" action="{% url 'inventory:category_update' c.id %}" class="space-y-3">
@@ -98,7 +98,7 @@
   </div>
 </div>
 
-<div x-show="showDeleteModal" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+<div x-show="showDeleteModal" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
   <div class="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4">
     <form method="post" x-bind:action="deleteAction">
       {% csrf_token %}

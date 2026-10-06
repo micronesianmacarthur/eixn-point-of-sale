@@ -53,6 +53,15 @@ python manage.py migrate --noinput
 
 python manage.py collectstatic --noinput 2>/dev/null || true
 
+# The built stylesheet is committed, so this should always exist. If it does not,
+# every page still renders 200 but arrives unstyled (WhiteNoise serves the
+# collected dir, not backend/static), so say so loudly instead of leaving the
+# cashier to wonder why the till looks broken.
+if [ ! -f /app/staticfiles/css/app.css ]; then
+    echo "WARNING: /app/staticfiles/css/app.css is missing — the UI will render unstyled."
+    echo "         Run 'npm ci && npm run build' and commit backend/static/."
+fi
+
 # Register the daily cloud-backup django-q schedule (idempotent).
 python manage.py ensure_backup_schedule
 

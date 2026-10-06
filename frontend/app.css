@@ -1,0 +1,181 @@
+@import 'tailwindcss';
+
+/* Self-hosted so the till keeps its type with no network. Latin subset of the
+   variable weight axis only; ~47 kB. */
+@font-face {
+  font-family: 'Inter Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('../vendor/fonts/inter-latin-wght-normal.woff2') format('woff2-variations');
+}
+
+/* Tailwind only sees the classes it finds in these files. The templates hold
+   most of the UI, including the Alpine expressions that toggle utilities, so
+   they are the content source. */
+@source '../backend/templates/**/*.html';
+
+@theme {
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, -apple-system,
+    'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'JetBrains Mono', 'Cascadia Mono', Menlo, monospace;
+
+  /* Brand ramp. Referenced as brand-50 … brand-950 in templates. */
+  --color-brand-50: #eefbf7;
+  --color-brand-100: #d3f4ea;
+  --color-brand-200: #aae9d8;
+  --color-brand-300: #74d8c1;
+  --color-brand-400: #3dbfa7;
+  --color-brand-500: #1ea48f;
+  --color-brand-600: #0f8474;
+  --color-brand-700: #0d6a5e;
+  --color-brand-800: #0e544c;
+  --color-brand-900: #10463f;
+  --color-brand-950: #032c29;
+
+  /* Neutrals, warmed very slightly towards the brand so greys and teal sit
+     together instead of fighting. */
+  --color-ink-50: #f7f8f8;
+  --color-ink-100: #eef0f0;
+  --color-ink-200: #dfe3e3;
+  --color-ink-300: #c5cccc;
+  --color-ink-400: #8f9b9b;
+  --color-ink-500: #667576;
+  --color-ink-600: #4a5859;
+  --color-ink-700: #3a4647;
+  --color-ink-800: #26302f;
+  --color-ink-900: #161d1d;
+  --color-ink-950: #0b1111;
+
+  /* Success/warning/danger kept as explicit ramps; templates reach for
+     emerald/amber/rose today and those names still resolve. */
+  --color-emerald-500: #10a36a;
+  --color-emerald-600: #0b865a;
+  --color-amber-500: #d98a06;
+  --color-rose-500: #d9435c;
+  --color-rose-600: #c22f49;
+
+  /* Shadows: a soft, low-contrast lift instead of Tailwind's default
+     grey-based ones, which read muddy on the ink palette. */
+  --shadow-card: 0 1px 2px 0 rgb(11 17 17 / 0.06), 0 1px 3px 0 rgb(11 17 17 / 0.04);
+  --shadow-pop: 0 10px 30px -12px rgb(11 17 17 / 0.35);
+
+  /* Legacy scale aliases.
+     ~30 templates were written against Tailwind's stock gray/blue/red/
+     green/yellow names. Redefining the scales here re-skins all of them at
+     once instead of leaving every interior screen on the old blue-grey while
+     only the shell is themed. New code should use brand-*, ink-* and the
+     semantic ramps above; these exist so the existing templates match until
+     they are touched. */
+  --color-gray-50: var(--color-ink-50);
+  --color-gray-100: var(--color-ink-100);
+  --color-gray-200: var(--color-ink-200);
+  --color-gray-300: var(--color-ink-300);
+  --color-gray-400: var(--color-ink-400);
+  --color-gray-500: var(--color-ink-500);
+  --color-gray-600: var(--color-ink-600);
+  --color-gray-700: var(--color-ink-700);
+  --color-gray-800: var(--color-ink-800);
+  --color-gray-900: var(--color-ink-900);
+  --color-gray-950: var(--color-ink-950);
+
+  --color-blue-50: var(--color-brand-50);
+  --color-blue-100: var(--color-brand-100);
+  --color-blue-200: var(--color-brand-200);
+  --color-blue-300: var(--color-brand-300);
+  --color-blue-400: var(--color-brand-400);
+  --color-blue-500: var(--color-brand-500);
+  --color-blue-600: var(--color-brand-600);
+  --color-blue-700: var(--color-brand-700);
+  --color-blue-800: var(--color-brand-800);
+  --color-blue-900: var(--color-brand-900);
+  --color-blue-950: var(--color-brand-950);
+
+  --color-red-50: #fef3f4;
+  --color-red-100: #fde5e8;
+  --color-red-200: #facdd4;
+  --color-red-500: var(--color-rose-500);
+  --color-red-600: var(--color-rose-600);
+  --color-red-700: #a71f36;
+  --color-red-800: #8d1c2f;
+
+  --color-green-50: #ecfdf5;
+  --color-green-100: #d5f5e7;
+  --color-green-200: #aeead2;
+  --color-green-500: var(--color-emerald-500);
+  --color-green-600: var(--color-emerald-600);
+  --color-green-700: #087a51;
+
+  --color-yellow-50: #fffaeb;
+  --color-yellow-100: #fef1c7;
+  --color-yellow-200: #fde68a;
+  --color-yellow-500: var(--color-amber-500);
+  --color-yellow-600: #c07405;
+  --color-yellow-700: #96620a;
+}
+
+@layer base {
+  /* Alpine keeps an element in the DOM until it initialises; without this the
+     checkout flashes its whole cart empty on load. */
+  [x-cloak] {
+    display: none !important;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-ink-100 text-ink-800 font-sans antialiased;
+  }
+
+  /* Numeric columns line up only if every digit is the same width; prices and
+     stock counts are read at a glance on a busy counter. */
+  table,
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Sidebar current section. Marked with aria-current rather than a class so
+     the active state lives in one place instead of every nav link. */
+  [aria-current='page'] {
+    @apply bg-brand-500/15 text-white;
+    box-shadow: inset 3px 0 0 var(--color-brand-400);
+  }
+
+  ::selection {
+    @apply bg-brand-200 text-brand-950;
+  }
+}
+
+@layer components {
+  /* Shared surfaces. Templates keep their own utility classes for layout, but
+     these carry the theme so cards and panels stay consistent. */
+  .card {
+    @apply bg-white border border-ink-200 rounded-xl shadow-card;
+  }
+
+  /* A custom class cannot be @apply-ed in Tailwind v4, so the button base is
+     shared through a selector list instead of composition. */
+  .btn,
+  .btn-primary,
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg
+      text-sm font-medium transition select-none;
+  }
+
+  .btn-primary {
+    @apply bg-brand-600 text-white hover:bg-brand-700 active:bg-brand-800
+      shadow-card;
+  }
+
+  .btn-ghost {
+    @apply bg-ink-100 text-ink-700 hover:bg-ink-200 active:bg-ink-300;
+  }
+
+  .field {
+    @apply bg-white rounded-lg border border-ink-300 px-3 py-2 text-sm
+      focus:ring-2 focus:ring-brand-500/40 focus:border-brand-500
+      placeholder:text-ink-400;
+  }
+}
