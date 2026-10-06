@@ -93,6 +93,15 @@ def process_checkout(*, session_id, items, payments, customer_id=None, operator_
         for p in Product.objects.select_for_update().filter(id__in=product_ids)
     }
 
+    # Last line of defence: the cart is rebuilt from client input, so an archived
+    # product can still arrive here. Checked up front so the cashier gets a named
+    # error instead of a KeyError on the line below.
+    archived_names = sorted(
+        Product.objects.filter(id__in=product_ids, is_active=False).values_list('name', flat=True)
+    )
+    if archived_names:
+        raise ValueError(f'Cannot sell archived product: {", ".join(archived_names)}')
+
     customer = None
     if customer_id:
         customer = Customer.objects.select_for_update().get(id=customer_id)
@@ -403,6 +412,19 @@ def receive_inventory(*, receipt_id, receipt_items, vendor_id, funded_by_owner, 
 
 @transaction.atomic
 def batch_offline_recovery(*, rows, operator_user=None):
+    # Checked before the Session row is created: the recovery grid only offers
+    # active products, but a queued file can name one archived since it was taken.
+    submitted_ids = {item['product_id'] for row in rows for item in row['items']}
+    archived = sorted(
+        Product.objects.filter(id__in=submitted_ids, is_active=False)
+        .values_list('name', flat=True)
+    )
+    if archived:
+        raise ValueError(
+            f'Recovery contains archived product: {", ".join(archived)}. '
+            'Restore it from Inventory before recovering.'
+        )
+
     session = Session.objects.create(
         opened_by=operator_user,
         closed_by=operator_user,

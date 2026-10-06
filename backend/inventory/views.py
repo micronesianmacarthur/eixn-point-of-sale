@@ -29,6 +29,10 @@ class ManagerOrAdminMixin(UserPassesTestMixin):
         return user.is_authenticated and (user.is_manager or user.is_admin)
 
 
+def _show_archived(request):
+    return request.GET.get('archived') in ('1', 'true', 'on')
+
+
 class ProductListView(LoginRequiredMixin, ListView):
     model = Product
     template_name = 'inventory/product_list.html'
@@ -38,6 +42,8 @@ class ProductListView(LoginRequiredMixin, ListView):
 
     def get_queryset(self):
         qs = Product.objects.select_related('vendor', 'category')
+        if not _show_archived(self.request):
+            qs = qs.active()
         vendor = self.request.GET.get('vendor')
         category = self.request.GET.get('category')
         q = self.request.GET.get('q', '').strip()
@@ -62,6 +68,7 @@ class ProductListView(LoginRequiredMixin, ListView):
         context['current_category'] = self.request.GET.get('category', '')
         context['current_q'] = self.request.GET.get('q', '')
         context['current_low_stock'] = self.request.GET.get('low_stock', '')
+        context['show_archived'] = _show_archived(self.request)
         return context
 
 
@@ -73,6 +80,8 @@ class ProductListTableView(LoginRequiredMixin, ListView):
 
     def get_queryset(self):
         qs = Product.objects.select_related('vendor', 'category')
+        if not _show_archived(self.request):
+            qs = qs.active()
         vendor = self.request.GET.get('vendor')
         category = self.request.GET.get('category')
         q = self.request.GET.get('q', '').strip()
@@ -95,14 +104,22 @@ class ProductListTableView(LoginRequiredMixin, ListView):
         context['current_category'] = self.request.GET.get('category', '')
         context['current_q'] = self.request.GET.get('q', '')
         context['current_low_stock'] = self.request.GET.get('low_stock', '')
+        context['show_archived'] = _show_archived(self.request)
         return context
 
 
-def _report_products(vendor, category, q):
+def _report_products(vendor, category, q, include_archived=False):
+    """Shared by the inventory report and the count sheet.
+
+    The report must keep valuing archived products that still hold stock, while
+    the count sheet feeds a stock-writing POST and so must only offer live ones.
+    """
     qs = Product.objects.select_related('vendor', 'category') \
         .exclude(vendor__name__iexact='N/A SERVICE') \
         .exclude(is_service=True) \
         .exclude(is_variable_weight=True)
+    if not include_archived:
+        qs = qs.active()
     if vendor:
         qs = qs.filter(vendor_id=vendor)
     if category:
@@ -127,6 +144,7 @@ class InventoryReportView(LoginRequiredMixin, TemplateView):
             self.request.GET.get('vendor'),
             self.request.GET.get('category'),
             self.request.GET.get('q', '').strip(),
+            include_archived=True,
         ):
             unit = getattr(p, unit_attr)
             line_total = (p.stock_quantity * unit).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
@@ -313,7 +331,7 @@ class ReceiveProductsView(ManagerOrAdminMixin, FormView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['vendor_list'] = Vendor.objects.exclude(name__iexact='N/A SERVICE')
-        context['product_list'] = Product.objects.select_related('vendor').order_by('name')
+        context['product_list'] = Product.objects.active().select_related('vendor').order_by('name')
         context['category_list'] = Category.objects.all()
         context['po_list'] = PurchaseOrder.objects.filter(
             status__in=[PurchaseOrder.Status.DRAFT, PurchaseOrder.Status.SENT]
@@ -381,9 +399,11 @@ class ReceiveProductsView(ManagerOrAdminMixin, FormView):
                     if existing_id:
                         try:
                             p = Product.objects.get(id=int(existing_id))
+                            if not p.is_active:
+                                raise ValueError('archived')
                             if not p.is_service:
                                 has_non_service = True
-                        except Product.DoesNotExist:
+                        except (Product.DoesNotExist, ValueError):
                             pass
             if has_non_service:
                 messages.error(self.request, 'Vendor is required for non-stock products.')
@@ -401,10 +421,30 @@ class ReceiveProductsView(ManagerOrAdminMixin, FormView):
             retail_price = _parse_decimal(self.request.POST.get(f'retail_price_{rid}', '0'))
             min_stock = _parse_decimal(self.request.POST.get(f'min_stock_{rid}', '0'))
 
+            # Row ids are client input, so an archived product can be posted here
+            # even though it is absent from the form's <select>.
+            row_product = None
+            if not new_name:
+                try:
+                    row_product = Product.objects.get(id=int(existing_id))
+                except (TypeError, ValueError, Product.DoesNotExist):
+                    messages.error(
+                        self.request,
+                        'Select an existing product for every row, or type a new product name.',
+                    )
+                    return self.form_invalid(form)
+                if not row_product.is_active:
+                    messages.error(
+                        self.request,
+                        f'"{row_product.name}" is archived. Restore it from Inventory '
+                        'before receiving stock.',
+                    )
+                    return self.form_invalid(form)
+
             if new_name:
                 is_service = self.request.POST.get(f'new_is_service_{rid}') == 'on'
             else:
-                is_service = Product.objects.filter(id=int(existing_id), is_service=True).exists()
+                is_service = row_product.is_service
 
             if not new_name and qty <= 0 and not is_service:
                 continue
@@ -434,7 +474,9 @@ class ReceiveProductsView(ManagerOrAdminMixin, FormView):
                 created_products.append(product)
             else:
                 product_id = int(existing_id)
-                Product.objects.filter(id=product_id).update(
+                # Bare .update() bypasses the queryset, so archived rows need the
+                # guard here or a crafted POST could restock and reprice them.
+                Product.objects.filter(id=product_id, is_active=True).update(
                     vendor=vendor,
                     cost_price=cost_price,
                     retail_price=retail_price,
@@ -488,7 +530,7 @@ def _parse_decimal(value):
 class ReceiveProductSearchView(LoginRequiredMixin, View):
     def get(self, request):
         q = request.GET.get('q', '').strip()
-        products = Product.objects.filter(
+        products = Product.objects.active().filter(
             Q(sku__icontains=q) | Q(name__icontains=q)
         ).select_related('vendor').order_by('name')[:15] if q else []
         html = render_to_string('inventory/partials/receive_product_search.html', {'products': products, 'q': q}, request=request)
@@ -516,7 +558,7 @@ class ProductDetailView(LoginRequiredMixin, DetailView):
 
 class ProductUpdateView(ManagerOrAdminMixin, UpdateView):
     model = Product
-    fields = ['name', 'category', 'vendor', 'retail_price', 'discount_price', 'is_on_sale', 'is_service', 'is_variable_weight', 'min_stock_level']
+    fields = ['name', 'category', 'vendor', 'retail_price', 'discount_price', 'is_on_sale', 'is_service', 'is_variable_weight', 'min_stock_level', 'is_active']
     template_name = 'inventory/product_list.html'
     success_url = reverse_lazy('inventory:product_list')
 
@@ -537,25 +579,28 @@ class ProductUpdateView(ManagerOrAdminMixin, UpdateView):
 
 
 class ProductDeleteView(ManagerOrAdminMixin, View):
+    """Archives rather than deletes.
+
+    Every FK to Product is PROTECT, so a hard delete was only ever possible for
+    a product that had never been received, sold, counted or bundled — in a real
+    shop, almost nothing. Archiving withdraws the product from every interactive
+    screen while leaving the row for receipts, sale history and reports, which is
+    what those screens actually need it for.
+    """
+
     def post(self, request, pk):
         product = get_object_or_404(Product, id=pk)
-        name = product.name
-        if TransactionLineItem.objects.filter(product=product).exists():
-            messages.error(
-                request,
-                f'Cannot delete "{name}" — it has been used in sales transactions.',
-            )
+        if not product.is_active:
+            messages.info(request, f'"{product.name}" is already archived.')
             return HttpResponseRedirect(reverse_lazy('inventory:product_list'))
 
-        try:
-            product.delete()
-        except ProtectedError:
-            messages.error(
-                request,
-                f'Cannot delete "{name}" — it is linked to purchase orders, receipts, or recipes.',
-            )
-            return HttpResponseRedirect(reverse_lazy('inventory:product_list'))
-        messages.success(request, f'Product "{name}" deleted.')
+        product.is_active = False
+        product.save(update_fields=['is_active'])
+        messages.success(
+            request,
+            f'Product "{product.name}" archived. It is hidden from checkout and stock '
+            'screens; past sales and reports keep it. Restore it from the Edit form.',
+        )
         return HttpResponseRedirect(reverse_lazy('inventory:product_list'))
 
 
@@ -701,7 +746,7 @@ class PurchaseOrderAddItemView(ManagerOrAdminMixin, View):
             qty = 1
         if qty <= 0:
             qty = 1
-        product = get_object_or_404(Product, id=product_id)
+        product = get_object_or_404(Product, id=product_id, is_active=True)
         item, created = PurchaseOrderItem.objects.get_or_create(
             purchase_order=po,
             product=product,
@@ -719,7 +764,7 @@ class PurchaseOrderProductSearchView(LoginRequiredMixin, View):
         q = request.GET.get('q', '').strip()
         po = get_object_or_404(PurchaseOrder, id=pk)
         existing_ids = po.items.values_list('product_id', flat=True)
-        products = Product.objects.filter(
+        products = Product.objects.active().filter(
             Q(sku__icontains=q) | Q(name__icontains=q)
         ).exclude(id__in=existing_ids).select_related('vendor').order_by('name')[:15] if q else []
         html = render_to_string('inventory/partials/po_product_search.html', {
@@ -730,7 +775,7 @@ class PurchaseOrderProductSearchView(LoginRequiredMixin, View):
 
 class LowStockView(LoginRequiredMixin, View):
     def get(self, request):
-        low_stock = Product.objects.exclude(vendor__name__iexact='N/A SERVICE').exclude(is_service=True).exclude(is_variable_weight=True).filter(stock_quantity__lte=F('min_stock_level')).select_related('vendor').order_by('vendor__name', 'name')
+        low_stock = Product.objects.active().exclude(vendor__name__iexact='N/A SERVICE').exclude(is_service=True).exclude(is_variable_weight=True).filter(stock_quantity__lte=F('min_stock_level')).select_related('vendor').order_by('vendor__name', 'name')
 
         child_ids = set(RecipeIngredient.objects.values_list('child_product_id', flat=True).distinct())
         vendor_products = []
@@ -770,7 +815,7 @@ class LowStockView(LoginRequiredMixin, View):
         html = render_to_string('inventory/partials/low_stock_list.html', {
             'vendors': vendors,
             'parent_children': parent_children,
-            'total_products': Product.objects.count(),
+            'total_products': Product.objects.active().count(),
             'pending_product_ids': pending_ids,
             'vendor_draft_pos': draft_pos,
         }, request=request)
@@ -794,7 +839,9 @@ class CreateDraftPOView(LoginRequiredMixin, View):
             created_new = True
 
         for pid in product_ids:
-            product = get_object_or_404(Product, id=pid)
+            # The ids come from the low-stock panel, but the POST body is client
+            # input, so guard rather than assume.
+            product = get_object_or_404(Product, id=pid, is_active=True)
             reorder_qty = max(product.min_stock_level * 2 - product.stock_quantity, 1)
             existing = PurchaseOrderItem.objects.filter(purchase_order=po, product=product).first()
             if existing:
@@ -981,7 +1028,7 @@ class RepackView(LoginRequiredMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['bulk_products'] = Product.objects.filter(
+        context['bulk_products'] = Product.objects.active().filter(
             stock_quantity__gt=0
         ).select_related('vendor').order_by('name')
 
@@ -990,7 +1037,7 @@ class RepackView(LoginRequiredMixin, TemplateView):
 
         parent_id = self.request.GET.get('parent')
         if parent_id:
-            parent = get_object_or_404(Product, id=parent_id)
+            parent = get_object_or_404(Product, id=parent_id, is_active=True)
             context['selected_parent'] = parent
             context['child_breakdowns'] = RecipeIngredient.objects.filter(
                 parent_product=parent
@@ -1016,7 +1063,7 @@ class RepackView(LoginRequiredMixin, TemplateView):
                 messages.error(request, 'Name, Retail Price, and Qty per Parent are required.')
                 return HttpResponseRedirect(reverse_lazy('inventory:repack') + f'?parent={parent_id}')
 
-            parent = get_object_or_404(Product, id=parent_id)
+            parent = get_object_or_404(Product, id=parent_id, is_active=True)
 
             dupes = RecipeIngredient.objects.filter(
                 parent_product=parent,
@@ -1073,7 +1120,7 @@ class RepackView(LoginRequiredMixin, TemplateView):
 class RepackProductSearchView(LoginRequiredMixin, View):
     def get(self, request):
         q = request.GET.get('q', '').strip()
-        products = Product.objects.filter(
+        products = Product.objects.active().filter(
             stock_quantity__gt=0
         ).filter(
             Q(sku__icontains=q) | Q(name__icontains=q)
@@ -1115,7 +1162,9 @@ class BundleCreateView(ManagerOrAdminMixin, View):
                 qty = Decimal(qty)
             except Exception:
                 qty = Decimal('1')
-            BundleItem.objects.create(bundle=bundle, product_id=int(product_id), quantity=qty)
+            # Row ids come from the client, so resolve against active products only.
+            product = get_object_or_404(Product, id=product_id, is_active=True)
+            BundleItem.objects.create(bundle=bundle, product=product, quantity=qty)
 
         messages.success(request, f'Bundle "{name}" created.')
         return HttpResponseRedirect(reverse_lazy('inventory:bundle_list'))
@@ -1124,7 +1173,7 @@ class BundleCreateView(ManagerOrAdminMixin, View):
 class BundleProductSearchView(ManagerOrAdminMixin, View):
     def get(self, request):
         q = request.GET.get('q', '').strip()
-        products = Product.objects.filter(
+        products = Product.objects.active().filter(
             Q(sku__icontains=q) | Q(name__icontains=q)
         ).order_by('name')[:15] if q else []
         html = render_to_string('inventory/partials/bundle_product_search.html',
@@ -1164,7 +1213,9 @@ class BundleUpdateView(ManagerOrAdminMixin, View):
                 qty = Decimal(qty)
             except Exception:
                 qty = Decimal('1')
-            BundleItem.objects.create(bundle=bundle, product_id=int(product_id), quantity=qty)
+            # Row ids come from the client, so resolve against active products only.
+            product = get_object_or_404(Product, id=product_id, is_active=True)
+            BundleItem.objects.create(bundle=bundle, product=product, quantity=qty)
 
         messages.success(request, f'Bundle "{name}" updated.')
         return HttpResponseRedirect(reverse_lazy('inventory:bundle_list'))

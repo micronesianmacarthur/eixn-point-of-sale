@@ -23,11 +23,21 @@ class PurchaseOrderItemInline(admin.TabularInline):
 
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
-    list_display = ('sku', 'name', 'vendor', 'stock_quantity', 'min_stock_level', 'retail_price', 'is_on_sale', 'is_service', 'is_variable_weight')
-    list_filter = ('vendor', 'is_on_sale', 'is_service', 'is_variable_weight')
+    list_display = ('sku', 'name', 'vendor', 'stock_quantity', 'min_stock_level', 'retail_price', 'is_on_sale', 'is_service', 'is_variable_weight', 'is_active')
+    list_filter = ('vendor', 'is_on_sale', 'is_service', 'is_variable_weight', 'is_active')
     search_fields = ('sku', 'name')
     inlines = [RecipeIngredientInline]
-    actions = ['delete_selected']
+    actions = ['archive_selected', 'restore_selected']
+
+    @admin.action(description='Archive selected products (hide, keep history)')
+    def archive_selected(self, request, queryset):
+        updated = queryset.update(is_active=False)
+        self.message_user(request, f'Archived {updated} product(s).')
+
+    @admin.action(description='Restore selected products (make sellable again)')
+    def restore_selected(self, request, queryset):
+        updated = queryset.update(is_active=True)
+        self.message_user(request, f'Restored {updated} product(s).')
 
 
 @admin.register(RecipeIngredient)

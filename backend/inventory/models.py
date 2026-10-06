@@ -38,6 +38,16 @@ class Category(models.Model):
         return self.name
 
 
+class ProductQuerySet(models.QuerySet):
+    def active(self):
+        """Products still in circulation — what any interactive surface shows."""
+        return self.filter(is_active=True)
+
+    def archived(self):
+        """Products withdrawn from sale, kept only so history still resolves them."""
+        return self.filter(is_active=False)
+
+
 class Product(models.Model):
     vendor = models.ForeignKey(Vendor, on_delete=models.CASCADE, related_name='products')
     category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, blank=True, related_name='products')
@@ -49,9 +59,21 @@ class Product(models.Model):
     is_on_sale = models.BooleanField(default=False)
     is_service = models.BooleanField(default=False, help_text='100% margin service item')
     is_variable_weight = models.BooleanField(default=False, help_text='Tingi fractional quantity item')
+    is_active = models.BooleanField(
+        default=True,
+        help_text='Cleared when the product is archived: hidden from picking, checkout and '
+                  'stock screens, but kept so past sales, receipts and reports still resolve it.',
+    )
     stock_quantity = models.DecimalField(max_digits=10, decimal_places=3, default=0)
     min_stock_level = models.DecimalField(max_digits=10, decimal_places=3, default=0)
     components = models.ManyToManyField('self', through=RecipeIngredient, symmetrical=False)
+
+    # Deliberately not the default manager. Every FK pointing at Product is
+    # PROTECT/denormalised so that receipts and P&L keep working for an archived
+    # product; making `objects` hide archived rows would break those reports and
+    # turn stock-restoring writes into silent no-ops. Interactive surfaces call
+    # .active() explicitly instead.
+    objects = ProductQuerySet.as_manager()
 
     def __str__(self):
         return f'{self.sku} — {self.name}'

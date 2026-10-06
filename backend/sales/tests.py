@@ -9,7 +9,7 @@ from django.utils import timezone
 from accounting.models import Ledger
 from core.models import BusinessInfo
 from customers.models import Customer
-from inventory.models import Category, Product, Vendor
+from inventory.models import Bundle, BundleItem, Category, Product, Vendor
 from users.models import User
 
 from .models import Payment, Session, Transaction
@@ -715,3 +715,171 @@ class DashboardVoidExclusionTests(TestCase):
         # Voiding a sale from another day must not disturb today's figures.
         self.assertEqual(context['sales_today_total'], Decimal('100.00'))
         self.assertEqual(context['sales_today_count'], 1)
+
+
+class ArchivedProductSalesTests(CheckoutBase):
+    """An archived product must be unsellable through every sales path, while
+    the sale history that already references it stays intact."""
+
+    @classmethod
+    def setUpTestData(cls):
+        super().setUpTestData()
+        # Without this, SetupCheckMiddleware 302s every request to /setup/.
+        BusinessInfo.objects.get_or_create(business_name='Test Shop')
+
+    def setUp(self):
+        super().setUp()
+        self.gone = Product.objects.create(
+            name='Discontinued Widget', category=self.category, vendor=self.vendor,
+            sku='W-99', retail_price=Decimal('10.00'), cost_price=Decimal('4.00'),
+            stock_quantity=Decimal('50'),
+        )
+        self.archive(self.gone)
+
+    def archive(self, product):
+        product.is_active = False
+        product.save(update_fields=['is_active'])
+
+    def cart_add(self, product):
+        return self.client.post(
+            reverse('sales:cart_add'),
+            {'product_id': product.id},
+        )
+
+    # --- search / cart ----------------------------------------------------
+
+    def test_checkout_search_hides_archived(self):
+        self.client.force_login(self.admin)
+        resp = self.client.get(reverse('sales:product_search'), {'q': 'Discontinued'})
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotContains(resp, 'W-99')
+
+    def test_cart_add_rejects_archived_product(self):
+        self.client.force_login(self.admin)
+        resp = self.cart_add(self.gone)
+        self.assertEqual(resp.status_code, 404)
+        session = self.client.session
+        self.assertEqual(session.get('cart', []), [])
+
+    def test_cart_add_still_accepts_live_product(self):
+        self.client.force_login(self.admin)
+        resp = self.cart_add(self.product)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(
+            [line['product_id'] for line in self.client.session['cart']],
+            [self.product.id],
+        )
+
+    def test_checkout_page_drops_archived_lines_from_an_open_cart(self):
+        # The product is archived while it sits in the cart, so the search
+        # filters never ran for it.
+        session = self.client.session
+        session['cart'] = [{
+            'product_id': self.gone.id, 'product_name': self.gone.name,
+            'sku': 'W-99', 'price': 10.0, 'quantity': 1, 'stock': 50.0,
+        }]
+        session.save()
+        self.client.force_login(self.admin)
+
+        resp = self.client.get(reverse('sales:checkout'))
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.context['cart'], [])
+        self.assertEqual(self.client.session['cart'], [])
+
+    # --- checkout ---------------------------------------------------------
+
+    def test_process_checkout_rejects_archived_product(self):
+        with self.assertRaises(ValueError) as ctx:
+            self.checkout(payments=[self.cash('10.00')],
+                          items=[{'product_id': self.gone.id, 'quantity': 1}])
+        self.assertIn('Discontinued Widget', str(ctx.exception))
+        self.assertEqual(Transaction.objects.count(), 0)
+        self.gone.refresh_from_db()
+        self.assertEqual(self.gone.stock_quantity, Decimal('50'))
+
+    def test_checkout_complete_view_rejects_archived_product(self):
+        self.client.force_login(self.admin)
+        resp = self.client.post(reverse('sales:checkout_complete'), {
+            'cart_json': json.dumps([{
+                'product_id': self.gone.id, 'product_name': self.gone.name,
+                'sku': 'W-99', 'price': 10.0, 'quantity': 1, 'stock': 50,
+            }]),
+            'payment_type': Payment.PaymentType.CASH,
+            'payments_json': json.dumps([
+                {'payment_type': Payment.PaymentType.CASH, 'amount': 10.0},
+            ]),
+        })
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(Transaction.objects.count(), 0)
+        self.gone.refresh_from_db()
+        self.assertEqual(self.gone.stock_quantity, Decimal('50'))
+
+    # --- offline recovery -------------------------------------------------
+
+    def test_offline_recovery_rejects_archived_product(self):
+        from .services import batch_offline_recovery
+
+        with self.assertRaises(ValueError) as ctx:
+            batch_offline_recovery(
+                rows=[{
+                    'total_amount': '10.00',
+                    'payment_amount': '10.00',
+                    'payment_type': Payment.PaymentType.CASH,
+                    'transaction_date': timezone.now(),
+                    'items': [{
+                        'product_id': self.gone.id, 'quantity': '1',
+                        'price': '10.00', 'cost_price': '4.00',
+                    }],
+                }],
+                operator_user=self.admin,
+            )
+        self.assertIn('Discontinued Widget', str(ctx.exception))
+        self.assertEqual(Transaction.objects.count(), 0)
+        # The virtual session must not be left behind either.
+        self.assertEqual(Session.objects.filter(status=Session.Status.POSTED).count(), 0)
+
+    def test_offline_recovery_page_hides_archived_lookup_entries(self):
+        self.client.force_login(self.admin)
+        resp = self.client.get(reverse('sales:offline_recovery'))
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotContains(resp, 'W-99')
+
+    # --- bundles ----------------------------------------------------------
+
+    def test_checkout_drops_archived_bundle_components(self):
+        bundle = Bundle.objects.create(name='Discontinued Mix')
+        BundleItem.objects.create(bundle=bundle, product=self.gone, quantity=Decimal('1'))
+        self.client.force_login(self.admin)
+
+        resp = self.client.get(reverse('sales:checkout'))
+        self.assertEqual(resp.context['bundles'], [])
+
+    def test_bundle_keeps_only_live_components(self):
+        bundle = Bundle.objects.create(name='Mixed')
+        BundleItem.objects.create(bundle=bundle, product=self.product, quantity=Decimal('1'))
+        BundleItem.objects.create(bundle=bundle, product=self.gone, quantity=Decimal('1'))
+        self.client.force_login(self.admin)
+
+        resp = self.client.get(reverse('sales:checkout'))
+        bundles = resp.context['bundles']
+        self.assertEqual(len(bundles), 1)
+        self.assertEqual([i['product_id'] for i in bundles[0]['items']], [self.product.id])
+
+    # --- history ----------------------------------------------------------
+
+    def test_past_sale_still_readable_after_the_product_is_archived(self):
+        txn = process_checkout(
+            session_id=self.session.id,
+            items=[{'product_id': self.product.id, 'quantity': 1}],
+            payments=[self.cash('10.00')],
+            operator_user=self.admin,
+        )
+        self.archive(self.product)
+
+        self.client.force_login(self.admin)
+        resp = self.client.get(reverse('sales:receipt', args=[txn.id]))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, self.product.name)
+        # And it is gone from the screens that would let it be sold again.
+        search = self.client.get(reverse('sales:product_search'), {'q': 'Widget'})
+        self.assertNotContains(search, self.product.sku)
