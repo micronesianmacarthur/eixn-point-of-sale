@@ -85,6 +85,18 @@
                class="rounded border-gray-300 text-red-500 focus:ring-red-400">
         <i class="fas fa-exclamation-triangle text-red-500 text-xs"></i> Low stock only
       </label>
+      <label class="inline-flex items-center gap-1.5 text-sm text-gray-600 cursor-pointer">
+        <input type="checkbox" name="archived" value="1"
+               {% if show_archived %}checked{% endif %}
+               hx-get="{% url 'inventory:product_table' %}"
+               hx-target="#product-table"
+               hx-include="#filter-form"
+               hx-trigger="change"
+               hx-push-url="true"
+               hx-indicator="#table-spinner"
+               class="rounded border-gray-300 text-blue-600 focus:ring-blue-400">
+        <i class="fas fa-box-archive text-gray-500 text-xs"></i> Show archived
+      </label>
       <span id="table-spinner" class="htmx-indicator"><i class="fas fa-spinner fa-spin text-blue-600"></i></span>
       <a href="{% url 'inventory:product_list' %}" class="ml-2 px-3 py-2 text-sm font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 hover:text-gray-800 rounded-lg transition" title="Reset filters">
         <i class="fas fa-undo"></i>
@@ -116,7 +128,7 @@ function deleteProductModal() {
     return {
         showModal: false,
         productName: '',
-        confirmDelete(name) {
+        confirmArchive(name) {
             this.productName = name;
             this.showModal = true;
         },

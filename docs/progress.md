@@ -6,6 +6,57 @@ A running log of changes made to the project, organized by date.
 
 ## 2026-10-05
 
+### Product soft-delete: archive instead of hard delete (`inventory/delete-product`)
+- Replaced the hard delete with a soft delete. Every FK to `Product` is `PROTECT`, so `Delete` only
+  ever worked for a product that had never been received, sold, counted or bundled — in a real shop,
+  almost nothing. `ProductDeleteView` now sets `is_active=False` and keeps the row, which is what
+  receipts, sale history and reports actually need it for
+- Added `Product.is_active` (migration `inventory/0011_product_is_active.py`) plus
+  `ProductQuerySet.active()` / `.archived()`. The default manager is deliberately **not** filtered:
+  a filtered default manager would silently hide archived products from history and reports, so every
+  interactive query opts in explicitly instead
+- Hidden on interactive screens: product list and its HTMX partial (behind a new "Show archived"
+  filter), checkout search, quick service picks, cart insertion, bundle payloads, low-stock panels and
+  counts, dashboard product count, receive selection and search, purchase-order item add, repack
+  search and parents, bundle component search, offline-recovery lookup
+- Kept visible where history demands it: the inventory report still values archived stock, the
+  product detail page still resolves (with an "is archived" banner), and sale/receipt screens are
+  untouched. The count sheet is the deliberate exception — it writes stock, so it only offers
+  active products, while the inventory report reads through `include_archived=True`
+- Restore path: the product edit modal gained an "Active (sellable)" checkbox, the archive button
+  became "Archived", and Django admin gained `is_active` in `list_display`/`list_filter` plus
+  `archive_selected` / `restore_selected` actions (the blanket `delete_selected` action was dropped,
+  since it can still hit the same `PROTECT` errors)
+- Added server-side gates, because search filtering is bypassable by a stale page or a crafted POST:
+  `process_checkout` names the offending products instead of raising `KeyError`; `post_stock_count`,
+  `receive_inventory` and `execute_repack` raise `ValueError`; the receive, repack, PO and bundle
+  views resolve posted ids with `is_active=True`; `batch_offline_recovery` rejects archived ids
+  *before* creating its virtual session
+- `CheckoutView._prune_archived_cart()` drops cart lines whose product was archived mid-sale and tells
+  the cashier, so an archived item neither renders nor reaches the posted cart. Returns are
+  unaffected: they go through `process_return`, so a discontinued product can still be refunded
+- `bulk_seed_products_csv` now reports a per-row error when a submitted SKU already exists (with an
+  extra hint when it is archived) instead of letting `bulk_create` raise `IntegrityError` — archiving
+  keeps the unique SKU row that a hard delete used to free
+- Fixed a pre-existing bug in `CartAddView` surfaced by the new cart tests: it stored
+  `product.stock_quantity` (a `Decimal`) in the session, which the JSON-serialising session backend
+  rejects, so every add-to-cart POST returned 500. Stock is now stored as a `float`
+- Tests: `ProductArchiveTests` (18 cases: queryset split, archive-not-delete including with receipt
+  history, idempotent re-archive, manager-only, restore via the edit form, hiding on list/table/
+  count/receive/repack-search, report still valuing archived stock, and rejection by every
+  stock-writing path) and `ArchivedProductSalesTests` (11 cases: search, cart add, stale-cart prune,
+  `process_checkout`, the checkout POST, offline recovery, bundles, and history of a product archived
+  after it was sold). `manage.py test` runs 110 tests: 106 pass, with only the 4 documented baseline
+  failures in `users.tests.UserManagementDeleteTests`
+- Verified with `manage.py check` (only the pre-existing `staticfiles.W004` for the missing
+  `backend/static`) and `makemigrations --check --dry-run` (no drift). The migration is a plain
+  `AddField`, so it is fully exercised by the test database; it has **not** been applied to the dev
+  database
+- Not committed: `count_entry.html` still carries an unrelated change from earlier (removal of a
+  duplicate bottom "Preview Changes" button) that should go in its own commit
+
+---
+
 ### Merged `sales/split-payment` into `main`
 - Merged the split-tender-at-checkout feature branch into `main` with `--no-ff` (merge commit
   `ecd5ea6`) and deleted the branch, per the Git workflow in `AGENTS.md`

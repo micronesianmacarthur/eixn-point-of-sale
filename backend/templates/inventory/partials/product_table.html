@@ -30,24 +30,32 @@
           <div x-data="deleteProductModal()">
             <form method="post" action="{% url 'inventory:product_delete' p.pk %}" x-ref="deleteForm">
               {% csrf_token %}
-              <button type="button" @click="confirmDelete('{{ p.name|escapejs }}')" class="inline-flex items-center px-2.5 py-1.5 text-xs font-medium text-red-700 bg-red-100 hover:bg-red-200 rounded-lg transition">
-                <i class="fas fa-trash mr-1"></i> Delete
+              {% if p.is_active %}
+              <button type="button" @click="confirmArchive('{{ p.name|escapejs }}')" class="inline-flex items-center px-2.5 py-1.5 text-xs font-medium text-red-700 bg-red-100 hover:bg-red-200 rounded-lg transition">
+                <i class="fas fa-trash mr-1"></i> Archive
               </button>
+              {% else %}
+              <span class="inline-flex items-center px-2.5 py-1.5 text-xs font-medium text-gray-500 bg-gray-100 rounded-lg cursor-default" title="Archived — hidden from checkout and stock screens. Open Edit to restore.">
+                <i class="fas fa-box-archive mr-1"></i> Archived
+              </span>
+              {% endif %}
             </form>
             <div x-show="showModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50" x-cloak>
               <div class="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4">
                 <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
-                  <h3 class="text-lg font-semibold text-gray-800">Confirm Delete</h3>
+                  <h3 class="text-lg font-semibold text-gray-800">Confirm Archive</h3>
                   <button type="button" @click="showModal = false" class="text-gray-400 hover:text-gray-600">&times;</button>
                 </div>
                 <div class="px-6 py-4">
                   <p class="text-sm text-gray-600">
-                    Delete product <strong x-text="productName"></strong>? This cannot be undone.
+                    Archive <strong x-text="productName"></strong>? It will be hidden from
+                    checkout and stock screens. Past sales, receipts and reports keep it,
+                    and you can restore it later.
                   </p>
                 </div>
                 <div class="px-6 py-4 border-t border-gray-200 flex justify-end space-x-3">
                   <button type="button" @click="showModal = false" class="px-4 py-2 text-sm text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition">Cancel</button>
-                  <button type="button" @click="submitDelete" class="px-4 py-2 text-sm text-white bg-red-600 hover:bg-red-700 rounded-lg transition">Delete</button>
+                  <button type="button" @click="submitDelete" class="px-4 py-2 text-sm text-white bg-red-600 hover:bg-red-700 rounded-lg transition">Archive</button>
                 </div>
               </div>
             </div>

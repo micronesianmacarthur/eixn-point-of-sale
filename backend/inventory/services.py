@@ -51,6 +51,20 @@ def receive_inventory(
         Decimal('0.00')
     )
 
+    # Receiving is an interactive stock screen, so archived products must not be
+    # restocked. Reported before the receipt is created to keep the error clean.
+    archived = sorted(
+        Product.objects.filter(
+            id__in=[item['product_id'] for item in items],
+            is_active=False,
+        ).values_list('name', flat=True)
+    )
+    if archived:
+        raise ValueError(
+            f'Cannot receive archived product: {", ".join(archived)}. '
+            'Restore it from Inventory first.'
+        )
+
     receipt = InventoryReceipt.objects.create(
         purchase_order=purchase_order,
         vendor=vendor,
@@ -113,6 +127,14 @@ def post_stock_count(*, items, adjusted_by, note=''):
     missing = [pid for pid in product_ids if pid not in products]
     if missing:
         raise ValueError(f'Products no longer exist: {missing}')
+    # Archived products still resolve above (the lookup is unfiltered), so name
+    # them separately rather than counting them as missing.
+    archived = sorted(p.name for p in products.values() if not p.is_active)
+    if archived:
+        raise ValueError(
+            f'Cannot count archived product: {", ".join(archived)}. '
+            'Restore it from Inventory first.'
+        )
 
     count = InventoryStockCount.objects.create(created_by=adjusted_by, note=note or '')
     adjustments = []
@@ -204,6 +226,19 @@ def bulk_seed_products_csv(csv_text, *, dry_run=False, received_by=None):
     product_by_sku = {}
     product_objs = []
 
+    # Archiving keeps the row (and its unique SKU) in place, so a re-import of an
+    # archived SKU used to be possible only because the row could be hard-deleted.
+    # Catch it per row instead of letting bulk_create raise IntegrityError.
+    submitted_skus = {
+        (row.get("sku") or "").strip().upper()
+        for row in rows
+        if (row.get("sku") or "").strip()
+    }
+    clashing_skus = {
+        p.sku: p.is_active
+        for p in Product.objects.filter(sku__in=submitted_skus)
+    } if submitted_skus else {}
+
     # Category cache — all text uppercased
     category_names = {r.get("category_name", "").strip().upper() for r in rows if r.get("category_name", "").strip()}
     existing_categories = {c.name: c for c in Category.objects.filter(name__in=category_names)}
@@ -223,6 +258,16 @@ def bulk_seed_products_csv(csv_text, *, dry_run=False, received_by=None):
             report["errors"].append(f"Row {i + 1}: vendor_name is required")
             continue
         sku = row.get("sku", "").strip()
+        if sku and sku.upper() in clashing_skus:
+            archived = not clashing_skus[sku.upper()]
+            report["errors"].append(
+                f"Row {i + 1}: SKU {sku} already exists"
+                + (
+                    " and is archived — restore it from Inventory instead of re-importing"
+                    if archived else ""
+                )
+            )
+            continue
         vendor = existing_vendors.get(vendor_name.upper())
         category_name = row.get("category_name", "").strip().upper()
         category = existing_categories.get(category_name) if category_name else None
@@ -334,6 +379,8 @@ def execute_repack(parent_product_id, parent_qty_to_consume):
     Returns a summary dict.
     """
     parent = Product.objects.select_for_update().get(id=parent_product_id)
+    if not parent.is_active:
+        raise ValueError(f'Cannot repack archived product "{parent.name}".')
     ingredients = list(
         RecipeIngredient.objects.filter(parent_product=parent).select_related('child_product')
     )

@@ -83,6 +83,16 @@
                   <span class="ml-2 text-sm text-gray-700">Variable Weight</span>
                 </label>
               </div>
+              <div class="rounded-lg bg-gray-50 border border-gray-200 px-3 py-2.5">
+                <label class="inline-flex items-center">
+                  <input type="checkbox" name="is_active" value="1" {% if product.is_active %}checked{% endif %} class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                  <span class="ml-2 text-sm text-gray-700">Active (sellable)</span>
+                </label>
+                <p class="mt-1 ml-6 text-xs text-gray-500">
+                  Uncheck to archive: hidden from checkout, search and stock screens, while
+                  past sales, receipts and reports keep the product.
+                </p>
+              </div>
             </div>
             <div class="px-6 py-4 border-t border-gray-200 flex justify-end space-x-3">
               <button type="button" @click="show = false" class="px-4 py-2 text-sm text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition">Cancel</button>
@@ -95,6 +105,13 @@
     </div>
     {% endif %}
   </div>
+  {% if not product.is_active %}
+  <div class="mb-4 px-4 py-3 rounded-lg bg-gray-100 border border-gray-300 text-sm text-gray-700 flex items-center gap-2">
+    <i class="fas fa-box-archive text-gray-500"></i>
+    <span><strong>{{ product.name }}</strong> is archived — hidden from checkout, search and stock screens.
+      Its past sales, receipts and reports are still shown below.</span>
+  </div>
+  {% endif %}
   <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
     <dl class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
       <div>

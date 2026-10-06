@@ -303,3 +303,216 @@ class PostStockCountTests(TestCase):
         self.assert_stock(self.p2, Decimal('50'))
         count = InventoryStockCount.objects.get()
         self.assertEqual(InventoryAdjustment.objects.count(), 2)
+
+
+class ProductArchiveTests(TestCase):
+    """`is_active=False` must hide a product from every interactive screen while
+    leaving the row (and its history) intact."""
+
+    @classmethod
+    def setUpTestData(cls):
+        BusinessInfo.objects.create(business_name='Test Biz')
+        cls.vendor = Vendor.objects.create(name='Test Vendor')
+        cls.manager = User.objects.create_user(
+            username='manager', password='pass', role=User.Role.MANAGER,
+        )
+        cls.cashier = User.objects.create_user(
+            username='cashier', password='pass', role=User.Role.CASHIER,
+        )
+
+    def setUp(self):
+        self.live = Product.objects.create(
+            vendor=self.vendor, name='Live Bread', sku='BAK-100',
+            cost_price=Decimal('2.00'), retail_price=Decimal('5.00'),
+            stock_quantity=Decimal('10'), min_stock_level=Decimal('4'),
+        )
+        self.gone = Product.objects.create(
+            vendor=self.vendor, name='Discontinued Loaf', sku='BAK-999',
+            cost_price=Decimal('3.00'), retail_price=Decimal('6.00'),
+            stock_quantity=Decimal('7'), min_stock_level=Decimal('4'),
+        )
+        self.client.force_login(self.manager)
+
+    def archive(self):
+        # Note: the success message names the product and is rendered on the next
+        # page load, so "must not appear" assertions below match on SKU instead.
+        return self.client.post(reverse('inventory:product_delete', args=[self.gone.id]))
+
+    # --- queryset ---------------------------------------------------------
+
+    def test_queryset_partitions_active_and_archived(self):
+        self.gone.is_active = False
+        self.gone.save(update_fields=['is_active'])
+        self.assertEqual(
+            list(Product.objects.active().values_list('id', flat=True)),
+            [self.live.id],
+        )
+        self.assertEqual(
+            list(Product.objects.archived().values_list('id', flat=True)),
+            [self.gone.id],
+        )
+        # The default manager stays unfiltered so reports and history keep working.
+        self.assertEqual(Product.objects.count(), 2)
+
+    # --- archiving instead of deleting -----------------------------------
+
+    def test_delete_archives_and_keeps_row(self):
+        resp = self.archive()
+        self.assertEqual(resp.status_code, 302)
+        self.gone.refresh_from_db()
+        self.assertFalse(self.gone.is_active)
+        self.assertEqual(Product.objects.count(), 2)
+
+    def test_archive_succeeds_even_when_history_references_the_product(self):
+        # A receipt alone is enough to make a hard delete impossible (PROTECT).
+        receipt = receive_inventory(
+            vendor=self.vendor,
+            received_by=self.manager,
+            items=[{'product_id': self.gone.id, 'quantity': Decimal('7'), 'cost_price': Decimal('3.00')}],
+        )
+        self.assertIsNotNone(receipt)
+        self.archive()
+        self.gone.refresh_from_db()
+        self.assertFalse(self.gone.is_active)
+        self.assertEqual(InventoryReceiptItem.objects.filter(product=self.gone).count(), 1)
+
+    def test_archiving_twice_is_a_no_op(self):
+        self.archive()
+        self.archive()
+        self.gone.refresh_from_db()
+        self.assertFalse(self.gone.is_active)
+        self.assertEqual(Product.objects.count(), 2)
+
+    def test_delete_requires_manager(self):
+        self.client.force_login(self.cashier)
+        self.archive()
+        self.gone.refresh_from_db()
+        self.assertTrue(self.gone.is_active)
+
+    def test_update_restores_an_archived_product(self):
+        self.archive()
+        resp = self.client.post(reverse('inventory:product_update', args=[self.gone.id]), {
+            'name': self.gone.name,
+            'vendor': self.vendor.id,
+            'retail_price': '6.50',
+            'min_stock_level': '0',
+            'is_active': 'on',
+        })
+        self.assertEqual(resp.status_code, 302)
+        self.gone.refresh_from_db()
+        self.assertTrue(self.gone.is_active)
+
+    # --- interactive screens hide archived products -----------------------
+
+    def test_product_list_hides_archived_until_asked(self):
+        self.archive()
+        resp = self.client.get(reverse('inventory:product_list'))
+        self.assertContains(resp, self.live.sku)
+        self.assertNotContains(resp, self.gone.sku)
+
+        resp = self.client.get(reverse('inventory:product_list'), {'archived': '1'})
+        self.assertContains(resp, self.gone.sku)
+        self.assertContains(resp, 'Archived')
+
+    def test_product_table_partial_hides_archived(self):
+        self.archive()
+        resp = self.client.get(reverse('inventory:product_table'))
+        self.assertNotContains(resp, self.gone.sku)
+        resp = self.client.get(reverse('inventory:product_table'), {'archived': '1'})
+        self.assertContains(resp, self.gone.sku)
+
+    def test_count_entry_offers_only_live_products(self):
+        self.archive()
+        resp = self.client.get(reverse('inventory:count_entry'))
+        self.assertContains(resp, self.live.sku)
+        self.assertNotContains(resp, self.gone.sku)
+
+    def test_receive_screen_offers_only_live_products(self):
+        self.archive()
+        resp = self.client.get(reverse('inventory:receive_products'))
+        self.assertNotContains(resp, self.gone.sku)
+
+    def test_repack_search_hides_archived(self):
+        self.archive()
+        resp = self.client.get(reverse('inventory:repack_product_search'), {'q': 'Loaf'})
+        self.assertNotContains(resp, self.gone.sku)
+
+    # --- reports and history keep archived products -----------------------
+
+    def test_inventory_report_still_values_archived_stock(self):
+        self.archive()
+        resp = self.client.get(reverse('inventory:inventory_report'), {'price': 'cost'})
+        self.assertContains(resp, self.gone.sku)
+        # 10 x 2.00 + 7 x 3.00 = 41.00
+        self.assertContains(resp, '41.00')
+
+    def test_product_detail_still_reachable(self):
+        self.archive()
+        resp = self.client.get(reverse('inventory:product_detail', args=[self.gone.id]))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'is archived')
+
+    # --- stock-writing paths reject archived products ---------------------
+
+    def test_stock_count_rejects_archived_product(self):
+        self.archive()
+        resp = self.client.post(reverse('inventory:count_post'), {
+            'product_id': [str(self.gone.id)],
+            f'qty_{self.gone.id}': '3',
+            f'reason_{self.gone.id}': InventoryAdjustment.Reason.PHYSICAL_COUNT,
+        })
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn(reverse('inventory:count_entry'), resp.url)
+        self.gone.refresh_from_db()
+        self.assertEqual(self.gone.stock_quantity, Decimal('7'))
+        self.assertEqual(InventoryAdjustment.objects.count(), 0)
+
+    def test_post_stock_count_rejects_archived_product(self):
+        self.archive()
+        with self.assertRaises(ValueError):
+            post_stock_count(
+                items=[{'product_id': self.gone.id, 'counted_qty': Decimal('3'),
+                        'reason': InventoryAdjustment.Reason.PHYSICAL_COUNT}],
+                adjusted_by=self.manager,
+            )
+        self.gone.refresh_from_db()
+        self.assertEqual(self.gone.stock_quantity, Decimal('7'))
+
+    def test_receive_inventory_rejects_archived_product(self):
+        self.archive()
+        with self.assertRaises(ValueError):
+            receive_inventory(
+                vendor=self.vendor,
+                received_by=self.manager,
+                items=[{'product_id': self.gone.id, 'quantity': Decimal('5'),
+                        'cost_price': Decimal('3.00')}],
+            )
+        self.gone.refresh_from_db()
+        self.assertEqual(self.gone.stock_quantity, Decimal('7'))
+        self.assertEqual(InventoryReceipt.objects.count(), 0)
+
+    def test_receive_view_rejects_archived_product_id(self):
+        self.archive()
+        Session.objects.create(opened_by=self.manager, starting_cash=Decimal('0.00'))
+        resp = self.client.post(reverse('inventory:receive_products'), {
+            'vendor': self.vendor.id,
+            'product_1': str(self.gone.id),
+            'qty_1': '5',
+            'cost_price_1': '3.00',
+            'retail_price_1': '6.00',
+        })
+        self.assertEqual(resp.status_code, 200)
+        self.gone.refresh_from_db()
+        self.assertEqual(self.gone.stock_quantity, Decimal('7'))
+        self.assertEqual(InventoryReceipt.objects.count(), 0)
+
+    def test_repack_rejects_archived_parent(self):
+        self.archive()
+        resp = self.client.post(reverse('inventory:repack'), {
+            'action': 'execute',
+            'parent_id': str(self.gone.id),
+            'parent_qty': '1',
+        })
+        self.assertEqual(resp.status_code, 302)
+        self.gone.refresh_from_db()
+        self.assertEqual(self.gone.stock_quantity, Decimal('7'))

@@ -71,7 +71,7 @@ class DashboardView(LoginRequiredMixin, TemplateView):
         )
         context['top_product'] = top_item
         context['chart_labels'], context['chart_data'] = get_daily_trend(days=30)
-        context['low_stock_products'] = Product.objects.filter(stock_quantity__lte=F('min_stock_level'))
+        context['low_stock_products'] = Product.objects.active().filter(stock_quantity__lte=F('min_stock_level'))
         context['payment_breakdown'] = get_payment_type_breakdown(today, today)
         context['sales_by_clerk'] = get_sales_by_clerk(today, today)
         context['weekly_comparison'] = get_weekly_comparison()
@@ -400,12 +400,44 @@ class SaleListTableView(LoginRequiredMixin, View):
 class CheckoutView(LoginRequiredMixin, TemplateView):
     template_name = 'sales/checkout.html'
 
+    def _prune_archived_cart(self):
+        """Drop cart lines whose product has since been archived.
+
+        Searching hides an archived product, but a manager can archive one while
+        it sits in an open cart. Removing the line here keeps it off the screen
+        and out of the posted cart instead of failing at checkout.
+        """
+        cart = self.request.session.get('cart', [])
+        if not cart:
+            return cart
+
+        archived_ids = set(
+            Product.objects.filter(
+                id__in=[line.get('product_id') for line in cart],
+                is_active=False,
+            ).values_list('id', flat=True)
+        )
+        if not archived_ids:
+            return cart
+
+        names = list(
+            Product.objects.filter(id__in=archived_ids)
+            .values_list('name', flat=True)
+        )
+        cart = [line for line in cart if line.get('product_id') not in archived_ids]
+        self.request.session['cart'] = cart
+        messages.warning(
+            self.request,
+            f'Removed from cart (archived): {", ".join(sorted(names))}.',
+        )
+        return cart
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['customers'] = Customer.objects.all()
         context['customers_json'] = list(Customer.objects.values('id', 'name', 'phone', 'credit_limit', 'cached_balance', 'is_owner'))
-        context['cart'] = self.request.session.get('cart', [])
-        context['service_products'] = Product.objects.filter(is_service=True).order_by('name')[:20]
+        context['cart'] = self._prune_archived_cart()
+        context['service_products'] = Product.objects.active().filter(is_service=True).order_by('name')[:20]
         bundles = Bundle.objects.filter(is_active=True).prefetch_related('items__product')
         bundles_data = []
         for b in bundles:
@@ -413,6 +445,11 @@ class CheckoutView(LoginRequiredMixin, TemplateView):
             total_normal = Decimal('0')
             for bi in b.items.all():
                 p = bi.product
+                # An archived component still sits in the bundle (BundleItem is
+                # PROTECT), and this payload is what addBundle() feeds the cart
+                # from, so drop it here or a discontinued item stays sellable.
+                if not p.is_active:
+                    continue
                 normal_price = p.discount_price if p.is_on_sale and p.discount_price is not None else p.retail_price
                 total_normal += normal_price * bi.quantity
                 items_data.append({
@@ -427,6 +464,9 @@ class CheckoutView(LoginRequiredMixin, TemplateView):
                 })
             for item in items_data:
                 item['price'] = item['normal_price']
+            # A bundle of nothing but archived products cannot be rung up.
+            if not items_data:
+                continue
             bundles_data.append({
                 'id': b.id,
                 'name': b.name,
@@ -473,7 +513,7 @@ class CheckoutView(LoginRequiredMixin, TemplateView):
 class ProductSearchView(LoginRequiredMixin, View):
     def get(self, request):
         q = request.GET.get('q', '').strip()
-        products = Product.objects.filter(
+        products = Product.objects.active().filter(
             Q(sku__icontains=q) | Q(name__icontains=q),
             Q(is_service=True) | Q(stock_quantity__gt=0),
         )[:10] if q else []
@@ -485,17 +525,22 @@ class ProductSearchView(LoginRequiredMixin, View):
 class CartAddView(LoginRequiredMixin, View):
     def post(self, request):
         product_id = request.POST.get('product_id')
-        product = get_object_or_404(Product, id=product_id)
+        # Authoritative gate: search can be bypassed by a stale page or a crafted
+        # POST, so an archived product must never enter the cart.
+        product = get_object_or_404(Product, id=product_id, is_active=True)
+        # The cart lives in the session, which is JSON-serialised on save, so
+        # Decimals must not be stored in it.
+        stock = float(product.stock_quantity)
         cart = request.session.get('cart', [])
         for item in cart:
             if item['product_id'] == product.id:
                 if product.is_service:
                     item['quantity'] += 1
                 else:
-                    item['quantity'] = min(item['quantity'] + 1, product.stock_quantity)
+                    item['quantity'] = min(item['quantity'] + 1, stock)
                 break
         else:
-            cart.append({'product_id': product.id, 'product_name': product.name, 'sku': product.sku, 'price': float(product.discount_price if product.is_on_sale and product.discount_price else product.retail_price), 'quantity': 1, 'stock': product.stock_quantity})
+            cart.append({'product_id': product.id, 'product_name': product.name, 'sku': product.sku, 'price': float(product.discount_price if product.is_on_sale and product.discount_price else product.retail_price), 'quantity': 1, 'stock': stock})
         request.session['cart'] = cart
         html = render_to_string('sales/partials/cart_summary.html', {'cart': cart, 'customers': Customer.objects.all()}, request=request)
         return HttpResponse(html)
@@ -761,7 +806,9 @@ class OfflineRecoveryView(LoginRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         from inventory.models import Product
-        products = Product.objects.order_by('name')
+        # Feeds the clickable Alpine lookup in the recovery grid, so archived
+        # products must not appear here.
+        products = Product.objects.active().order_by('name')
         context['products_json'] = list(products.values('id', 'sku', 'name'))
         return context
 
