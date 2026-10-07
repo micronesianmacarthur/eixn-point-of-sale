@@ -6,6 +6,162 @@ A running log of changes made to the project, organized by date.
 
 ## 2026-10-06
 
+### Receipt totals & tender grids — aligned to Price/Total columns (`sales/receipt-redesign`)
+- `$totals` (Sub Total / Tax / Grand Total) and `$tender` (payment legs Cash/Card/Account + Total)
+  rows now match the items [Price, Total] columns: labels right-aligned at col 6 (Price column),
+  values right-aligned at col 7 (Total column). Tax keeps its double rule, now spanning only
+  cols 6–7. Dropped the old 4-col inner wrapper — class tokens 609 → 606 (expected, Tailwind scans
+  templates). `sales.tests.ReceiptTests` green
+
+### Receipt items Total column — aligned to totals values (`sales/receipt-redesign`)
+- Full-page items grid now mirrors the template: Quantity(1) / Item(2) / Description(3–5,
+  `col-span-3`) / Price(6) / Total(7) — the items "Total" column right-aligned in col 7, the same
+  column as the Sub Total / Tax / Grand Total values. Header + item rows both updated.
+  `col-span-3` already in compiled CSS (609 tokens); `sales.tests.ReceiptTests` green
+
+### Receipt label tweaks — 'Price' / 'Cashier' (`sales/receipt-redesign`)
+- Full-page items header "Unit Price" → "Price"; field row "Clerk:" → "Cashier:" in `receipt.html`
+  (small block already used both names). `sales.tests.ReceiptTests` green
+
+### Receipt "Bill To" label — bold (`sales/receipt-redesign`)
+- Added `font-bold` to the "Bill To" header in `receipt.html` (keeps its bottom border). No new
+  CSS classes (`npm run build` 609 tokens); `sales.tests.ReceiptTests` green
+
+### Receipt field labels — left-aligned (`sales/receipt-redesign`)
+- The five label cells (Ticket No / Datetime / PO Number / Clerk / Customer ID) in `receipt.html`
+  changed from `text-right` to `text-left` (values stay right-aligned in cols 2–3); kept
+  `whitespace-nowrap`. No new CSS classes (`npm run build` 609 tokens); `sales.tests.ReceiptTests` green
+- Note: the scratch DB container is now `eixn-pos-db` (IP 172.17.0.3), not `eixn-point-of-sale-db-1`
+  @ 172.20.0.2 — the hardcoded IP in AGENTS.md / skills is stale
+
+### OpenCode skills + sales domain lander
+- Added four machine-loadable runbooks under `.opencode/skills/`, each a `SKILL.md` with
+  `name`/`description` frontmatter (loaded by opencode on task match):
+  - `verify-print` — receipt/print QA loop (test-client render in rolled-back txn → serve
+    `backend/` → headless Chromium → `pdftotext -bbox`); pgrep/not pkill cleanup; ports.
+  - `migrate-data` — data migrations are untested (RunPython on empty table); scratch-DB
+    round-trip with legacy rows + reverse-restore; `makemigrations --check` drift.
+  - `run-tests` — bare `manage.py test` runs 0 tests; explicit labels, stale `test_eixn_pos`
+    drop, scratch `DATABASE_URL`, baseline users-4 failures, BusinessInfo/403/DisallowedHost.
+  - `add-payment-type` — model `PaymentType` label → migration → checkout buttons →
+    `paymentLabel()` → HTMX select → receipt legs (automatic) → tests → progress.md.
+- Added `backend/sales/SKILLS.md`: a domain *lander* (not a runbook) — flow, app map
+  (models/services/analytics/views/templates), invariants (Account term, Decimal, legs-used,
+  Chromium-not-WeasyPrint), pointers to the four skills
+- User will need to restart opencode for the skills to load
+
+### Receipt items header — bold (`sales/receipt-redesign`)
+- Set `font-bold` on both items-table header rows in `receipt.html`: the full-page grid
+  (Quantity / Item / Description / Unit Price / Total, matching the Excel template's bold header
+  cells) and the 72 mm block (Item / Qty / Price / Total). No new CSS classes (`npm run build` still
+  609 tokens); `sales.tests.ReceiptTests` green, `manage.py check` clean
+
+### AGENTS.md — documented Tailwind build + testing/print gotchas
+- Fixed the wrong "Tailwind CSS (CDN)" claim: v4 is a root-level devDependency, CLI-built from
+  `frontend/app.css` into `backend/static/css/app.css` via `npm run build`; new template classes need
+  a rebuild (`verify-static.mjs` prints the class total)
+- Added Testing Gotchas: `manage.py test` needs explicit labels (bare run executes 0 tests); scratch
+  DB `DATABASE_URL` + dropping stale `test_eixn_pos`; `HTTP_HOST='localhost'` for the test `Client()`;
+  WeasyPrint ignores Tailwind v4 `@layer` rules so verify print with headless Chromium +
+  `pdftotext -bbox`; the in-transaction render harness recipe; the `pkill -f` self-kill trap (use
+  `pgrep -ax` + kill by PID, port 8091 is Prowlarr); `STORE_CREDIT` displays as "Account"
+  (`session_close`/`offline_recovery`/`zreport` hold stale "Store Credit" strings); TextChoices
+  label changes still emit migrations
+
+### Receipt redesign v3 — payment legs + right-aligned header (`sales/receipt-redesign`)
+- Reworked the full-page receipt to the user's **updated** `template_receipt_simple.xml`: doc type
+  stays top-left but is now left-aligned; the boarded underline headers are gone — Ticket No /
+  Datetime / PO Number / Clerk / Customer ID are right-aligned label:value pairs in the left block;
+  company logo sits top-right (cols 6–7) above a left-aligned company block (name, address, phone,
+  email, website) that runs beside the field rows
+- "Bill To" keeps its bottom rule and now shows only populated customer fields (name + phone/email)
+- **Payment legs return to the full page** (the new template reserves `[pay_leg_1..3]` + a `Total`
+  row under Grand Total). `ReceiptView` now supplies `payment_legs` (one row per payment type
+  actually used, with its `Payment.PaymentType` label) and `payment_total` (sum of those legs).
+  Unused types are not rendered — a cash+card sale shows only Cash and Card, never Store Credit /
+  Owner Draw
+- **"Store Credit" → "Account"**: the `STORE_CREDIT` payment leg was surfacing the raw model label
+  ("Store Credit") on the receipt while every other surface (checkout `paymentLabel`, cart dropdown,
+  dashboard) already said "Account". Changed the `Payment.PaymentType` label to `'Account'`
+  (`sales/0010_alter_payment_payment_type`, choices-only) so the full-page legs, 72 mm block and
+  customer detail all agree. Added `test_receipt_account_leg_is_labeled_account`; tightened the
+  customer-detail assertion
+- Label-wrap fix: the 5 field labels get `whitespace-nowrap` (matches Excel's overflow-a-short-cell
+  display) so "PO Number:" / "Customer ID:" stop wrapping in the narrow 1/7 column
+- Grand Total and the final Total row are bold; the Tax double rule is drawn only under the
+  totals block (cols 4–7), not the full document width — like the template's `ce11`-styled cells
+  (a per-row full-width rule was the immediate fix target)
+- Verified with the render harness again: fresh HTML via Django test client inside a rolled-back
+  transaction, printed headless (1 Letter page, no shell, labels single-line, legs Card $4.00 /
+  Cash $8.00 / Total $12.00 on the demo sale). Added `test_receipt_full_pagelists_only_tenders_used_in_the_sale`
+  (asserts legs/`payment_total` context and that Store Credit / Owner Draw are absent). Green: sales
+  69, core 4, users still the 4 documented baseline failures; `npm run build` OK (607 tokens),
+  `manage.py check` clean
+
+### Receipt redesign v2 — simple template (`sales/receipt-redesign`)
+- Reworked the full-page receipt to the user's updated `template_receipt_simple.xml` — a much
+  lighter look than v1: doc type top-left, **company logo top-right** (vertically centered),
+  underlined DateTime / Ticket No. headers with right-aligned values, PO Number / Clerk /
+  Customer ID underline fields, Bill To (left) next to company details (right), an items table with
+  a single bottom-ruled header (no boxed cells), and Sub Total / Tax / Grand Total with a
+  double rule under Tax. Receipt notes footer (top rule, centered) still reads
+  `BusinessInfo.receipt_notes`
+- **PO Number and Tax are rendered even though nothing populates them yet** (labels + empty/zero
+  cells), as the user wants those fields present for a future PO and tax implementation
+- Tendert / Change lines are no longer on the full page (the template has no room for them); they
+  remain on the 72 mm small receipt and the transaction detail page, so split-tender info is not
+  lost
+- Fixes during verification: gave PO/Clerk/Customer-ID labels and total labels a wider column span
+  so "PO Number:", "Customer ID:", "Grand Total" don't wrap in the narrow 1/7 columns
+- Verified end-to-end with headless Chromium (1 Letter page, shell/nav absent, logo embedded).
+  Test suite green — 114 tests, only the 4 documented `UserManagementDeleteTests` baseline
+  failures; `npm run build` OK (607 tokens), `manage.py check` clean
+
+### Receipt notes setting (`core/settings` + `sales/receipt-redesign`)
+- Managers can now set "Receipt Notes" in System Settings → new **Receipt** tab (visible to
+  managers; the server-side save is gated `request.user.is_manager`). Saved to the new
+  `BusinessInfo.receipt_notes` TextField (`core/0006_businessinfo_receipt_notes`, schema-only),
+  reused by the existing one-form settings page (`SettingsForm` Textarea, `get_initial`/
+  `form_valid`)
+- The full-page receipt's disclaimer footer now renders `business.receipt_notes` exactly where the
+  `template_receipt.xml` "disclaimer" area is (`min-h-[3.5em]`, left-aligned); the 72 mm small
+  block shows it the same way. Blank restores the default "Thank you! Please keep this receipt."
+  Both blocks get their value from the `business` context already supplied to the page, so no view
+  change was needed
+- Added `backend/core/tests.py` (4 tests: manager saves, cashier save ignored, notes render on the
+  receipt, default note fallback). Full suite 114 with the 4 documented
+  `UserManagementDeleteTests` baseline failures; `manage.py check` clean
+
+### Full-page receipt redesign with logo (`sales/receipt-redesign`)
+- Rewrote `backend/templates/sales/receipt.html` as a 7-column full-page (Letter) receipt that
+  matches the `template_receipt.xml` layout the user supplied from Excel/LibreOffice: logo above the
+  business details (top-left), bordered doc type (SALE/REFUND RECEIPT) top-right, boxed
+  DateTime/Ticket header block, Bill To block, boxed Clerk/Customer ID meta, boxed items table
+  (Quantity / Item / Description / Unit Price / Total), Sub Total + Grand Total, tenders, Change,
+  and a left-aligned disclaimer. The original 72 mm thermal block is untouched and still switches
+  in via the existing `printReceipt('small')` call
+- **New fields in the receipt view context**: `ReceiptView` (`backend/sales/views.py`) now exposes
+  `sku` per line item and a precomputed `subtotal` (sum of line totals, `Decimal`, `ROUND_HALF_UP`)
+- Template fields with no source data were intentionally omitted (Ship To, PO Number,
+  Terms/Ship/VIA/FOB, tax rows, page number). Tender + Change rows were added because the app has
+  split-tender data and the old thermal receipt already reported it. Business `logo` (optional
+  `BusinessInfo.logo`, `MEDIA`) renders when set; it 404s under `DEBUG=False` until production
+  media serving exists (pre-existing gap, also affects `settings.html`)
+- **Global print hygiene**, now for every page: `@media print` rules in `frontend/app.css` hide the
+  sidebar, the main header, `.no-print` elements, and the mobile bottom nav (`print:hidden` on the
+  `base.html:122` nav — print media width is <1024 px so the `lg:hidden` rule wrongly shows it),
+  and clear the content wrapper's `p-6 pb-20` padding so a receipt fits one Letter page
+- **Verification**: `npm run build` (verify-static OK, 603 tokens), `manage.py check` clean,
+  sales 68 tests pass, full suite 110 with the 4 documented `UserManagementDeleteTests` baseline
+  failures. Visual check is now via **headless Chromium** (`--headless --print-to-pdf` +
+  `--screenshot`, served via a live Django render): 1 page, shell/nav absent, logo embedded.
+  WeasyPrint proved unsuitable as a preview proxy — it silently drops Tailwind v4's `@layer
+  utilities` rules (grid utilities, `display:none`, …), producing stacked rows, a phantom ~2-page
+  overflow, and a visible shell. Browsers apply those layers correctly; trust Chromium, not
+  WeasyPrint, when eyeballing Tailwind v4 pages
+- "Reprint Receipt" on the txn detail page (`transaction_detail.html`) was a no-op `<button>`;
+  made it a link to `sales:receipt/<id>/` so reprinting shows the redesigned full-page receipt
+
 ### Offline-first frontend: local Tailwind, vendored assets, teal/ink theme (`core/theming`)
 - Removed every CDN tag. `cdn.tailwindcss.com` was the root problem: the till's entire UI depended
   on a shop with working internet, so a dropped connection meant an unstyled, non-interactive
