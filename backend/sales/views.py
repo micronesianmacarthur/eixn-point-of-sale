@@ -728,7 +728,7 @@ class CreditCheckView(LoginRequiredMixin, View):
             return HttpResponse('<span class="text-green-600 text-sm">No customer selected.</span>')
         customer = get_object_or_404(Customer, id=customer_id)
         payment_type = request.GET.get('payment_type', 'CASH')
-        if payment_type != 'STORE_CREDIT':
+        if payment_type != 'ACCOUNT':
             return HttpResponse('<span class="text-green-600 text-sm">Cash/Card selected &mdash; no limit check needed.</span>')
         projected = customer.cached_balance + cart_total
         available = customer.credit_limit - customer.cached_balance
@@ -781,7 +781,7 @@ class ReturnSaleView(LoginRequiredMixin, View):
             ]
             refund_amount = original.total_amount
             # Refund method defaults to the original sale's dominant leg. A
-            # cashier can override it in the return form; store credit is only
+            # cashier can override it in the return form; account is only
             # offered when the original had a customer attached.
             default_refund_type = (
                 original.payments.order_by('-amount').values_list('payment_type', flat=True).first()

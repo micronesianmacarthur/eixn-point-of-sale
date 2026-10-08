@@ -4,35 +4,129 @@ A running log of changes made to the project, organized by date.
 
 ---
 
+## 2026-10-08
+
+### `deduct_composite()` — sales must not touch related stock
+- `deduct_composite()` (`inventory/services.py`) previously walked `RecipeIngredient` rows and, when the
+  sold product was a parent, deducted `quantity_required x quantity` from each child **as well as**
+  from the parent. That was wrong on two counts: a sale of a parent silently consumed repacked child
+  stock (double-counting the units that `execute_repack` had just created), and it double-deducted the
+  parent when it appeared both as a recipe parent and as the sold SKU
+- The function now deducts **only the SKU actually sold**:
+  `Product.objects.filter(id=product_id, is_service=False).update(stock_quantity=F('stock_quantity') - qty)`.
+  No `RecipeIngredient` lookup, no child deduction, no recursive component walk
+- The invariant, now stated in the function's docstring: parent/child stock is linked **only** by
+  `execute_repack` (parent consumed → child created). Selling a parent must not touch child stock, and
+  selling a child must not touch parent stock. `execute_repack` is the single point where a parent's
+  stock turns into a child's
+- Verified against the live test products (`tst-0001` → `tst-0002` x4): start 10/0; repack 1 parent →
+  9/4; sell 1 parent → 8/4 (child unmoved); sell 1 child → 8/3 (parent unmoved); sell 1 parent → 7/3
+- `manage.py test sales inventory customers accounting` → 108 green. `manage.py check` clean,
+  `makemigrations --check` clean
+
+### Receipt footer: hardcoded "Thank you" replaced by `BusinessInfo.receipt_notes`
+- Both receipt surfaces carried a hardcoded sign-off next to the configurable note. The web receipt
+  printed `Thank you! Please keep this receipt.` on its own line and, separately, `receipt_notes` above
+  it in smaller grey type; the thermal receipt printed `THANK YOU` / `PLEASE KEEP THIS RECEIPT` centred,
+  then a `-` rule, then `receipt_notes`. A shop that had set a note therefore printed two different
+  sign-offs on one receipt, and the note could never win
+- Removed the hardcoded text from both. `templates/sales/receipt.html` now renders only
+  `receipt_notes` (promoted from `text-xs text-gray-500` to `text-sm`, since it is now the sole footer
+  line rather than a footnote), and `sales/receipts.py:build_receipt_lines` prints only the note's
+  non-blank lines under the existing `=` separator. The extra `-` rule before the note is gone — it
+  only existed to separate the two sign-offs
+- Empty `receipt_notes` now yields a receipt with no footer text at all rather than the old default
+  copy, which is the point of the setting: the shop controls the message
+- Two tests in `sales/tests.py` (`test_receipt_template_drops_hardcoded_thank_you_line`,
+  `test_thermal_receipt_drops_hardcoded_thank_you_line`) assert the text is gone while the note still
+  prints. Both were confirmed to fail against the old code, so they genuinely pin the behaviour
+- `manage.py test sales core inventory customers accounting` → 112 green. `manage.py check` clean,
+  `makemigrations --check` clean, `npm run build` OK (593 class tokens, verify-static clean)
+
+
+## 2026-10-08
+
+### Database reset and admin user setup
+- Flushed the database (removed all data)
+- Created superuser admin/admin123
+- Set admin user role to ADMIN
+- Created default BusinessInfo
+
+
+## 2026-10-08
+
+### Address fields added to Customer, Vendor, and User models
+- Added address_1, city, state, zip_code, country fields to Customer model (`backend/customers/models.py`)
+- Added address_1, city, state, zip_code, country fields to Vendor model (`backend/inventory/models.py`)
+- Added address_1, city, state, zip_code, country fields to User model (`backend/users/models.py`)
+- Created CustomerForm and VendorForm in respective apps
+- Updated User forms (UserCreateForm, UserUpdateForm) to include address fields
+- Updated template modals for customer, vendor, and user creation/edit to use placeholders for address fields (credit limit retains label in customer form)
+- Applied Django migrations for all three apps
+
+### Investigation of negative stock for SKU tst-0004
+- Found that tst-0001 is parent product in a recipe where tst-0004 is child with ratio 4.0
+- No adjustments or receipts for tst-0004; negative stock likely from test repack operations or direct data modification
+- Recommended resetting stock to zero for test items
+
+
+## 2026-10-07
+
+### System Settings: manager-only "Receipt" tab (BusinessInfo.receipt_notes)
+- Added `BusinessInfo.receipt_notes` (TextField, blank) in `core/models.py` + new migration
+  `core/0006_businessinfo_receipt_notes.py`. The dev DB already carried a `receipt_notes` column
+  with an identically-named migration recorded in `django_migrations`, so the new file matches
+  that recorded migration exactly — `migrate core` on dev reports "No migrations to apply".
+  (This is the third live migration on the branch, alongside the sales data migration.)
+- `core/views.py` `SettingsForm`: new optional `receipt_notes` textarea; `get_initial` seeds it
+  from the `BusinessInfo` singleton; `form_valid` saves it `update_fields=['receipt_notes']`
+  only when `request.user.is_manager` (ADMIN or MANAGER — a cashier POST cannot set it).
+- `core/settings.html`: new "Receipt" tab (button + panel) between General/Session and Customers,
+  rendered only for `is_manager`, styled like the other tabs.
+- Receipt surfaces now show the note: `sales/receipt.html` footer (`linebreaksbr`) and the thermal
+  receipt in `sales/receipts.py` (`_center`ed under the keep-this-receipt note, honoring one line
+  per notes row).
+- New `core/tests.py` (previously the app had none) covering both sides of the gate: manager sees
+  the tab and can save the note; cashier sees no `name="receipt_notes"` field and POSTing the
+  value leaves `BusinessInfo` untouched. Added receipt-display assertions for both the thermal
+  builder and the web receipt. Suite: `manage.py test core sales` → 72 green; `manage.py check`,
+  `makemigrations --check`, `npm run build` (593 class tokens) all clean.
+
+### Transaction detail: Reprint Receipt button wired up
+- `sales/transaction_detail.html`: the previously dead "Reprint Receipt" `<button>` is now an
+  anchor to `sales:receipt` (`/sales/receipt/{id}/`); recolored to the brand teal
+  (`bg-brand-600`/`hover:bg-brand-700`, white text, exactly `#0f8474`). The other header actions
+  (Return Sale, Void Sale) were left intact; the reprint link sits alongside them under the
+  manager/POSTED guard.
+- Extended `test_transaction_detail_renders_tender_breakdown` to assert the link renders and
+  points at the receipt URL. 9/9 split-checkout + receipt tests green, `npm run build` OK
+  (590 → 592 class tokens).
+
+### Payment type `STORE_CREDIT` → `ACCOUNT` (value + member rename)
+- Renamed the store-credit tender end-to-end: `Payment.PaymentType.STORE_CREDIT`
+  (`'STORE_CREDIT'`, label "Store Credit") is now `ACCOUNT` (`'ACCOUNT'`, label "Account") in
+  `sales/models.py`.
+- Updated all references: `sales/services.py` (alias `ACCOUNT`, `normalize_payments`,
+  `process_checkout` limit check, `process_return`, `void_transaction`, `batch_offline_recovery`,
+  error strings now say "Account"), `sales/analytics.py` breakdown, `sales/views.py`
+  `CreditCheckView` (`'ACCOUNT'`), `core/management/commands/reconcile_customer_balances.py` and
+  `fix_customer_credit_balances.py`.
+- Templates: Alpine cart (`base.html` leg filter/addLeg/checkCredit/`paymentLabel`),
+  `checkout.html` buttons + refund select, `cart_summary.html`, `offline_recovery.html`,
+  `dashboard.html` account card + doughnut (keys now `payment_breakdown.ACCOUNT`),
+  `session_close.html` and `zreport_content.html` (labels + `pb.ACCOUNT` keys).
+- `sales/tests.py`: helper + assertions updated; `assertContains(response, 'Account')`.
+- New migration `sales/0010_alter_payment_payment_type.py`: `RunPython` rewrites existing
+  `Payment.payment_type` rows `'STORE_CREDIT'` → `'ACCOUNT'` plus the `AlterField` for the changed
+  choices. Verified on the scratch DB: seeded a legacy `STORE_CREDIT` row, applied (became
+  `ACCOUNT`, `CASH` untouched), and reversed (restored `STORE_CREDIT`).
+- The dev DB (`eixn_pos`) was migrated too: a stale `django_migrations` record shadowed the new
+  migration name, so that phantom row was removed before `migrate sales` (2026-10-07); 6 payment
+  rows converted `STORE_CREDIT` → `ACCOUNT`, `get_payment_type_display()` now returns "Account".
+
+---
+
 ## 2026-10-06
-
-### Receipt totals & tender grids — aligned to Price/Total columns (`sales/receipt-redesign`)
-- `$totals` (Sub Total / Tax / Grand Total) and `$tender` (payment legs Cash/Card/Account + Total)
-  rows now match the items [Price, Total] columns: labels right-aligned at col 6 (Price column),
-  values right-aligned at col 7 (Total column). Tax keeps its double rule, now spanning only
-  cols 6–7. Dropped the old 4-col inner wrapper — class tokens 609 → 606 (expected, Tailwind scans
-  templates). `sales.tests.ReceiptTests` green
-
-### Receipt items Total column — aligned to totals values (`sales/receipt-redesign`)
-- Full-page items grid now mirrors the template: Quantity(1) / Item(2) / Description(3–5,
-  `col-span-3`) / Price(6) / Total(7) — the items "Total" column right-aligned in col 7, the same
-  column as the Sub Total / Tax / Grand Total values. Header + item rows both updated.
-  `col-span-3` already in compiled CSS (609 tokens); `sales.tests.ReceiptTests` green
-
-### Receipt label tweaks — 'Price' / 'Cashier' (`sales/receipt-redesign`)
-- Full-page items header "Unit Price" → "Price"; field row "Clerk:" → "Cashier:" in `receipt.html`
-  (small block already used both names). `sales.tests.ReceiptTests` green
-
-### Receipt "Bill To" label — bold (`sales/receipt-redesign`)
-- Added `font-bold` to the "Bill To" header in `receipt.html` (keeps its bottom border). No new
-  CSS classes (`npm run build` 609 tokens); `sales.tests.ReceiptTests` green
-
-### Receipt field labels — left-aligned (`sales/receipt-redesign`)
-- The five label cells (Ticket No / Datetime / PO Number / Clerk / Customer ID) in `receipt.html`
-  changed from `text-right` to `text-left` (values stay right-aligned in cols 2–3); kept
-  `whitespace-nowrap`. No new CSS classes (`npm run build` 609 tokens); `sales.tests.ReceiptTests` green
-- Note: the scratch DB container is now `eixn-pos-db` (IP 172.17.0.3), not `eixn-point-of-sale-db-1`
-  @ 172.20.0.2 — the hardcoded IP in AGENTS.md / skills is stale
 
 ### OpenCode skills + sales domain lander
 - Added four machine-loadable runbooks under `.opencode/skills/`, each a `SKILL.md` with
@@ -50,12 +144,6 @@ A running log of changes made to the project, organized by date.
   Chromium-not-WeasyPrint), pointers to the four skills
 - User will need to restart opencode for the skills to load
 
-### Receipt items header — bold (`sales/receipt-redesign`)
-- Set `font-bold` on both items-table header rows in `receipt.html`: the full-page grid
-  (Quantity / Item / Description / Unit Price / Total, matching the Excel template's bold header
-  cells) and the 72 mm block (Item / Qty / Price / Total). No new CSS classes (`npm run build` still
-  609 tokens); `sales.tests.ReceiptTests` green, `manage.py check` clean
-
 ### AGENTS.md — documented Tailwind build + testing/print gotchas
 - Fixed the wrong "Tailwind CSS (CDN)" claim: v4 is a root-level devDependency, CLI-built from
   `frontend/app.css` into `backend/static/css/app.css` via `npm run build`; new template classes need
@@ -67,100 +155,6 @@ A running log of changes made to the project, organized by date.
   `pgrep -ax` + kill by PID, port 8091 is Prowlarr); `STORE_CREDIT` displays as "Account"
   (`session_close`/`offline_recovery`/`zreport` hold stale "Store Credit" strings); TextChoices
   label changes still emit migrations
-
-### Receipt redesign v3 — payment legs + right-aligned header (`sales/receipt-redesign`)
-- Reworked the full-page receipt to the user's **updated** `template_receipt_simple.xml`: doc type
-  stays top-left but is now left-aligned; the boarded underline headers are gone — Ticket No /
-  Datetime / PO Number / Clerk / Customer ID are right-aligned label:value pairs in the left block;
-  company logo sits top-right (cols 6–7) above a left-aligned company block (name, address, phone,
-  email, website) that runs beside the field rows
-- "Bill To" keeps its bottom rule and now shows only populated customer fields (name + phone/email)
-- **Payment legs return to the full page** (the new template reserves `[pay_leg_1..3]` + a `Total`
-  row under Grand Total). `ReceiptView` now supplies `payment_legs` (one row per payment type
-  actually used, with its `Payment.PaymentType` label) and `payment_total` (sum of those legs).
-  Unused types are not rendered — a cash+card sale shows only Cash and Card, never Store Credit /
-  Owner Draw
-- **"Store Credit" → "Account"**: the `STORE_CREDIT` payment leg was surfacing the raw model label
-  ("Store Credit") on the receipt while every other surface (checkout `paymentLabel`, cart dropdown,
-  dashboard) already said "Account". Changed the `Payment.PaymentType` label to `'Account'`
-  (`sales/0010_alter_payment_payment_type`, choices-only) so the full-page legs, 72 mm block and
-  customer detail all agree. Added `test_receipt_account_leg_is_labeled_account`; tightened the
-  customer-detail assertion
-- Label-wrap fix: the 5 field labels get `whitespace-nowrap` (matches Excel's overflow-a-short-cell
-  display) so "PO Number:" / "Customer ID:" stop wrapping in the narrow 1/7 column
-- Grand Total and the final Total row are bold; the Tax double rule is drawn only under the
-  totals block (cols 4–7), not the full document width — like the template's `ce11`-styled cells
-  (a per-row full-width rule was the immediate fix target)
-- Verified with the render harness again: fresh HTML via Django test client inside a rolled-back
-  transaction, printed headless (1 Letter page, no shell, labels single-line, legs Card $4.00 /
-  Cash $8.00 / Total $12.00 on the demo sale). Added `test_receipt_full_pagelists_only_tenders_used_in_the_sale`
-  (asserts legs/`payment_total` context and that Store Credit / Owner Draw are absent). Green: sales
-  69, core 4, users still the 4 documented baseline failures; `npm run build` OK (607 tokens),
-  `manage.py check` clean
-
-### Receipt redesign v2 — simple template (`sales/receipt-redesign`)
-- Reworked the full-page receipt to the user's updated `template_receipt_simple.xml` — a much
-  lighter look than v1: doc type top-left, **company logo top-right** (vertically centered),
-  underlined DateTime / Ticket No. headers with right-aligned values, PO Number / Clerk /
-  Customer ID underline fields, Bill To (left) next to company details (right), an items table with
-  a single bottom-ruled header (no boxed cells), and Sub Total / Tax / Grand Total with a
-  double rule under Tax. Receipt notes footer (top rule, centered) still reads
-  `BusinessInfo.receipt_notes`
-- **PO Number and Tax are rendered even though nothing populates them yet** (labels + empty/zero
-  cells), as the user wants those fields present for a future PO and tax implementation
-- Tendert / Change lines are no longer on the full page (the template has no room for them); they
-  remain on the 72 mm small receipt and the transaction detail page, so split-tender info is not
-  lost
-- Fixes during verification: gave PO/Clerk/Customer-ID labels and total labels a wider column span
-  so "PO Number:", "Customer ID:", "Grand Total" don't wrap in the narrow 1/7 columns
-- Verified end-to-end with headless Chromium (1 Letter page, shell/nav absent, logo embedded).
-  Test suite green — 114 tests, only the 4 documented `UserManagementDeleteTests` baseline
-  failures; `npm run build` OK (607 tokens), `manage.py check` clean
-
-### Receipt notes setting (`core/settings` + `sales/receipt-redesign`)
-- Managers can now set "Receipt Notes" in System Settings → new **Receipt** tab (visible to
-  managers; the server-side save is gated `request.user.is_manager`). Saved to the new
-  `BusinessInfo.receipt_notes` TextField (`core/0006_businessinfo_receipt_notes`, schema-only),
-  reused by the existing one-form settings page (`SettingsForm` Textarea, `get_initial`/
-  `form_valid`)
-- The full-page receipt's disclaimer footer now renders `business.receipt_notes` exactly where the
-  `template_receipt.xml` "disclaimer" area is (`min-h-[3.5em]`, left-aligned); the 72 mm small
-  block shows it the same way. Blank restores the default "Thank you! Please keep this receipt."
-  Both blocks get their value from the `business` context already supplied to the page, so no view
-  change was needed
-- Added `backend/core/tests.py` (4 tests: manager saves, cashier save ignored, notes render on the
-  receipt, default note fallback). Full suite 114 with the 4 documented
-  `UserManagementDeleteTests` baseline failures; `manage.py check` clean
-
-### Full-page receipt redesign with logo (`sales/receipt-redesign`)
-- Rewrote `backend/templates/sales/receipt.html` as a 7-column full-page (Letter) receipt that
-  matches the `template_receipt.xml` layout the user supplied from Excel/LibreOffice: logo above the
-  business details (top-left), bordered doc type (SALE/REFUND RECEIPT) top-right, boxed
-  DateTime/Ticket header block, Bill To block, boxed Clerk/Customer ID meta, boxed items table
-  (Quantity / Item / Description / Unit Price / Total), Sub Total + Grand Total, tenders, Change,
-  and a left-aligned disclaimer. The original 72 mm thermal block is untouched and still switches
-  in via the existing `printReceipt('small')` call
-- **New fields in the receipt view context**: `ReceiptView` (`backend/sales/views.py`) now exposes
-  `sku` per line item and a precomputed `subtotal` (sum of line totals, `Decimal`, `ROUND_HALF_UP`)
-- Template fields with no source data were intentionally omitted (Ship To, PO Number,
-  Terms/Ship/VIA/FOB, tax rows, page number). Tender + Change rows were added because the app has
-  split-tender data and the old thermal receipt already reported it. Business `logo` (optional
-  `BusinessInfo.logo`, `MEDIA`) renders when set; it 404s under `DEBUG=False` until production
-  media serving exists (pre-existing gap, also affects `settings.html`)
-- **Global print hygiene**, now for every page: `@media print` rules in `frontend/app.css` hide the
-  sidebar, the main header, `.no-print` elements, and the mobile bottom nav (`print:hidden` on the
-  `base.html:122` nav — print media width is <1024 px so the `lg:hidden` rule wrongly shows it),
-  and clear the content wrapper's `p-6 pb-20` padding so a receipt fits one Letter page
-- **Verification**: `npm run build` (verify-static OK, 603 tokens), `manage.py check` clean,
-  sales 68 tests pass, full suite 110 with the 4 documented `UserManagementDeleteTests` baseline
-  failures. Visual check is now via **headless Chromium** (`--headless --print-to-pdf` +
-  `--screenshot`, served via a live Django render): 1 page, shell/nav absent, logo embedded.
-  WeasyPrint proved unsuitable as a preview proxy — it silently drops Tailwind v4's `@layer
-  utilities` rules (grid utilities, `display:none`, …), producing stacked rows, a phantom ~2-page
-  overflow, and a visible shell. Browsers apply those layers correctly; trust Chromium, not
-  WeasyPrint, when eyeballing Tailwind v4 pages
-- "Reprint Receipt" on the txn detail page (`transaction_detail.html`) was a no-op `<button>`;
-  made it a link to `sales:receipt/<id>/` so reprinting shows the redesigned full-page receipt
 
 ### Offline-first frontend: local Tailwind, vendored assets, teal/ink theme (`core/theming`)
 - Removed every CDN tag. `cdn.tailwindcss.com` was the root problem: the till's entire UI depended

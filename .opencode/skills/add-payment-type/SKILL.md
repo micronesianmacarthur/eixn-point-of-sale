@@ -6,9 +6,10 @@ description: Add or rename a Payment.PaymentType option end-to-end in this POS �
 # Adding a PaymentType option
 
 1. **Model** — add the choice to `Payment.PaymentType` in `sales/models.py`. The label is the
-   POS display term (e.g. `STORE_CREDIT = 'STORE_CREDIT', 'Account'`). A label-only change still
-   produces a migration: run `manage.py makemigrations --check --dry-run`; apply with `migrate`
-   on the **scratch** DB only (`DATABASE_URL=postgres://eixn:eixn@172.20.0.2:5432/eixn_pos`),
+   POS display term (e.g. `ACCOUNT = 'ACCOUNT', 'Account'`). A value change rewrites existing
+   rows, so it needs a `RunPython` data migration (see the `migrate-data` skill); a label-only
+   change also produces a migration: run `manage.py makemigrations --check --dry-run`; apply with
+   `migrate` on the **scratch** DB only (`DATABASE_URL=postgres://eixn:eixn@172.20.0.2:5432/eixn_pos`),
    never against the dev DB (localhost:5433).
 
 2. **Checkout buttons (Alpine path)** — `backend/templates/sales/checkout.html`:
@@ -29,8 +30,7 @@ description: Add or rename a Payment.PaymentType option end-to-end in this POS �
    - legs render only the types used in the sale (unused types absent)
    - the display label, e.g. `['Account']` and `assertNotContains('Store Credit')`
 
-7. **Terminology** — the POS display term for `STORE_CREDIT` is "Account". Hardcoded
-   `"Store Credit"` strings in `session_close.html`, `offline_recovery.html`, `zreport_content.html`
-   are stale leftovers, not a convention to copy.
+7. **Terminology** — the POS display term for the `ACCOUNT` payment type (store credit) is
+   "Account", and the stored DB value is `'ACCOUNT'`.
 
 8. Log the change in `docs/progress.md`.

@@ -36,6 +36,12 @@ class SettingsForm(forms.Form):
         help_text='Credit limit assigned to new customers (set to 0 to disable credit by default)',
         widget=forms.NumberInput(attrs={'class': _input_classes, 'step': '0.01'}),
     )
+    receipt_notes = forms.CharField(
+        required=False,
+        label='Receipt Note',
+        help_text='Message printed at the bottom of every receipt',
+        widget=forms.Textarea(attrs={'class': _input_classes, 'rows': 3}),
+    )
 
 
 class SettingsView(LoginRequiredMixin, FormView):
@@ -48,6 +54,7 @@ class SettingsView(LoginRequiredMixin, FormView):
         timeout_enabled = SystemSetting.objects.filter(key='SESSION_IDLE_TIMEOUT_ENABLED').first()
         timeout = SystemSetting.objects.filter(key='SESSION_IDLE_TIMEOUT').first()
         credit_limit = SystemSetting.objects.filter(key='DEFAULT_CUSTOMER_CREDIT_LIMIT').first()
+        biz = BusinessInfo.objects.first()
 
         timeout_val = 5
         if timeout:
@@ -61,6 +68,7 @@ class SettingsView(LoginRequiredMixin, FormView):
             'session_idle_timeout_enabled': timeout_enabled.value != 'false' if timeout_enabled else True,
             'session_idle_timeout': timeout_val,
             'default_customer_credit_limit': credit_limit.value if credit_limit else '0.00',
+            'receipt_notes': biz.receipt_notes if biz else '',
         }
 
     def form_valid(self, form):
@@ -75,6 +83,12 @@ class SettingsView(LoginRequiredMixin, FormView):
             key='DEFAULT_CUSTOMER_CREDIT_LIMIT',
             defaults={'value': str(credit_limit), 'description': 'Default credit limit assigned to new customers'},
         )
+
+        if self.request.user.is_manager:
+            biz = BusinessInfo.objects.first()
+            if biz:
+                biz.receipt_notes = form.cleaned_data['receipt_notes']
+                biz.save(update_fields=['receipt_notes'])
 
         if self.request.user.is_admin:
             enabled = form.cleaned_data['session_idle_timeout_enabled']

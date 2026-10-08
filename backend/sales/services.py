@@ -14,7 +14,7 @@ from .models import Payment, Session, Transaction, TransactionLineItem
 
 CASH = Payment.PaymentType.CASH
 CARD = Payment.PaymentType.CARD
-STORE_CREDIT = Payment.PaymentType.STORE_CREDIT
+ACCOUNT = Payment.PaymentType.ACCOUNT
 OWNER_DRAW = Payment.PaymentType.OWNER_DRAW
 
 CENTS = Decimal('0.01')
@@ -22,7 +22,7 @@ ZERO = Decimal('0.00')
 
 # Types the checkout screen can tender. OWNER_DRAW is deliberately excluded: an
 # owner draw is only ever created by the accounting flows, never by a cashier.
-TENDERABLE_TYPES = (CASH, CARD, STORE_CREDIT)
+TENDERABLE_TYPES = (CASH, CARD, ACCOUNT)
 
 
 def to_cents(value):
@@ -51,8 +51,8 @@ def normalize_payments(payments, total, customer=None):
         if amount <= ZERO:
             raise ValueError('Payment amount must be greater than zero.')
 
-        if payment_type == STORE_CREDIT and customer is None:
-            raise ValueError('Store credit requires a customer.')
+        if payment_type == ACCOUNT and customer is None:
+            raise ValueError('Account payment requires a customer.')
 
         existing = next((i for i, (t, _) in enumerate(legs) if t == payment_type), None)
         if existing is not None:
@@ -131,7 +131,7 @@ def process_checkout(*, session_id, items, payments, customer_id=None, operator_
     else:
         legs = [(CASH, total)]
 
-    credit_amount = sum((amount for t, amount in legs if t == STORE_CREDIT), ZERO)
+    credit_amount = sum((amount for t, amount in legs if t == ACCOUNT), ZERO)
 
     txn = Transaction.objects.create(
         session=session,
@@ -164,7 +164,7 @@ def process_checkout(*, session_id, items, payments, customer_id=None, operator_
             projected = customer.cached_balance + credit_amount
             if projected > customer.credit_limit:
                 available = max(ZERO, customer.credit_limit - customer.cached_balance)
-                raise ValueError(f'Store credit denied — projected balance ${projected:.2f} exceeds credit limit ${customer.credit_limit:.2f}. Only ${available:.2f} available.')
+                raise ValueError(f'Account payment denied — projected balance ${projected:.2f} exceeds credit limit ${customer.credit_limit:.2f}. Only ${available:.2f} available.')
         if credit_amount > ZERO:
             customer.cached_balance += credit_amount
             customer.save(update_fields=['cached_balance'])
@@ -203,7 +203,7 @@ def void_transaction(*, txn_id, operator_user=None):
                 stock_quantity=models.F('stock_quantity') + item.quantity_sold
             )
 
-    credit_amount = txn.payment_amount_for(STORE_CREDIT)
+    credit_amount = txn.payment_amount_for(ACCOUNT)
     if txn.customer and credit_amount > ZERO:
         Customer.objects.filter(id=txn.customer_id).update(
             cached_balance=models.F('cached_balance') - credit_amount
@@ -237,8 +237,8 @@ def process_return(*, original_txn_id, return_items, refund_amount, refund_type,
 
     if refund_type not in TENDERABLE_TYPES:
         raise ValueError(f'Invalid refund type: {refund_type}')
-    if refund_type == STORE_CREDIT and not original_txn.customer:
-        raise ValueError('Cannot refund to store credit without a customer on the original transaction.')
+    if refund_type == ACCOUNT and not original_txn.customer:
+        raise ValueError('Cannot refund to account without a customer on the original transaction.')
 
     return_txn = Transaction.objects.create(
         session=original_txn.session,
@@ -273,7 +273,7 @@ def process_return(*, original_txn_id, return_items, refund_amount, refund_type,
     # the tab — paying the customer out twice. Refunding over an existing credit
     # leg is allowed; it just drives cached_balance negative, which the model
     # permits.
-    if original_txn.customer and refund_type == STORE_CREDIT:
+    if original_txn.customer and refund_type == ACCOUNT:
         Customer.objects.filter(id=original_txn.customer_id).update(
             cached_balance=models.F('cached_balance') - refund_amount
         )
@@ -464,7 +464,7 @@ def batch_offline_recovery(*, rows, operator_user=None):
             )
             deduct_composite(item['product_id'], Decimal(str(item['quantity'])))
 
-        credit_amount = txn.payment_amount_for(STORE_CREDIT)
+        credit_amount = txn.payment_amount_for(ACCOUNT)
         if txn.customer and credit_amount > ZERO:
             Customer.objects.filter(id=txn.customer_id).update(
                 cached_balance=models.F('cached_balance') + credit_amount

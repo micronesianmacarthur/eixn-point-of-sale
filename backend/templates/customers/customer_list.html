@@ -5,12 +5,17 @@
 <div x-data="{
   showEdit: false,
   editId: '',
-  editName: '', editPhone: '', editEmail: '', editCreditLimit: '', editAllowPayLater: false, editIsOwner: false, editLoyaltyEnabled: true,
-  editCustomer(id, name, phone, email, creditLimit, allowPayLater, isOwner, loyaltyEnabled) {
+  editName: '', editPhone: '', editEmail: '', editAddress1: '', editCity: '', editState: '', editZipCode: '', editCountry: '', editCreditLimit: '', editAllowPayLater: false, editIsOwner: false, editLoyaltyEnabled: true,
+  editCustomer(id, name, phone, email, address1, city, state, zip_code, country, creditLimit, allowPayLater, isOwner, loyaltyEnabled) {
     this.editId = id;
     this.editName = name;
     this.editPhone = phone;
     this.editEmail = email;
+    this.editAddress1 = address1;
+    this.editCity = city;
+    this.editState = state;
+    this.editZipCode = zip_code;
+    this.editCountry = country;
     this.editCreditLimit = creditLimit;
     this.editAllowPayLater = allowPayLater;
     this.editIsOwner = isOwner;
@@ -93,20 +98,41 @@
         </div>
         <div class="px-6 py-4 space-y-4">
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Name</label>
-            <input type="text" name="name" class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" required>
+
+            <input type="text" name="name" class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" required placeholder="Name" aria-label="Name">
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Phone</label>
-            <input type="text" name="phone" class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+
+            <input type="text" name="phone" class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Phone" aria-label="Phone">
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
-            <input type="email" name="email" class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+
+            <input type="email" name="email" class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Email" aria-label="Email">
           </div>
           <div>
+
+            <input type="text" name="address_1" class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Address 1" aria-label="Address 1">
+          </div>
+          <div>
+
+            <input type="text" name="city" class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="City" aria-label="City">
+          </div>
+          <div>
+
+            <input type="text" name="state" class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="State" aria-label="State">
+          </div>
+          <div>
+
+            <input type="text" name="zip_code" class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="ZIP Code" aria-label="ZIP Code">
+          </div>
+          <div>
+
+            <input type="text" name="country" class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Country" aria-label="Country">
+          </div>
+          <div>
+
             <label class="block text-sm font-medium text-gray-700 mb-1">Credit Limit ($)</label>
-            <input type="number" name="credit_limit" step="0.01" value="{{ default_credit_limit }}" class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+            <input type="number" name="credit_limit" step="0.01" value="{{ default_credit_limit }}" class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Credit Limit ($)" aria-label="Credit Limit ($)">
           </div>
           <div class="grid grid-cols-3 gap-4">
             <label class="flex items-center space-x-2 text-sm text-gray-700">
@@ -141,20 +167,40 @@
         </div>
         <div class="px-6 py-4 space-y-4">
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Name</label>
-            <input type="text" name="name" x-model="editName" class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" required>
+
+            <input type="text" name="name" x-model="editName" class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" required placeholder="Name" aria-label="Name">
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Phone</label>
-            <input type="text" name="phone" x-model="editPhone" class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+
+            <input type="text" name="phone" x-model="editPhone" class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Phone" aria-label="Phone">
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
-            <input type="email" name="email" x-model="editEmail" class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+
+            <input type="email" name="email" x-model="editEmail" class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Email" aria-label="Email">
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Credit Limit ($)</label>
-            <input type="number" name="credit_limit" step="0.01" x-model="editCreditLimit" class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+
+            <input type="text" name="address_1" x-model="editAddress1" class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Address 1" aria-label="Address 1">
+          </div>
+          <div>
+
+            <input type="text" name="city" x-model="editCity" class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="City" aria-label="City">
+          </div>
+          <div>
+
+            <input type="text" name="state" x-model="editState" class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="State" aria-label="State">
+          </div>
+          <div>
+
+            <input type="text" name="zip_code" x-model="editZipCode" class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="ZIP Code" aria-label="ZIP Code">
+          </div>
+          <div>
+
+            <input type="text" name="country" x-model="editCountry" class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Country" aria-label="Country">
+          </div>
+          <div>
+
+            <input type="number" name="credit_limit" step="0.01" x-model="editCreditLimit" class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Credit Limit ($)" aria-label="Credit Limit ($)">
           </div>
           <div class="grid grid-cols-3 gap-4">
             <label class="flex items-center space-x-2 text-sm text-gray-700">

@@ -13,22 +13,17 @@ from .models import Category, InventoryAdjustment, InventoryReceipt, InventoryRe
 
 @transaction.atomic
 def deduct_composite(product_id, quantity):
-    ingredients = list(
-        RecipeIngredient.objects.filter(
-            parent_product_id=product_id,
-            child_product__is_service=False,
-        ).select_related('child_product').select_for_update()
+    """
+    Deduct stock for a sold product.
+
+    Only the product actually sold is deducted. Recipe relationships are
+    deliberately ignored here: parent/child stock is linked solely by
+    `execute_repack` (parent consumed -> child created). Selling a parent must
+    not touch child stock, and selling a child must not touch parent stock.
+    """
+    Product.objects.filter(id=product_id, is_service=False).update(
+        stock_quantity=models.F('stock_quantity') - Decimal(str(quantity))
     )
-    if ingredients:
-        for ing in ingredients:
-            qty = ing.quantity_required * Decimal(str(quantity))
-            Product.objects.filter(id=ing.child_product_id).update(
-                stock_quantity=models.F('stock_quantity') - qty
-            )
-    else:
-        Product.objects.filter(id=product_id, is_service=False).update(
-            stock_quantity=models.F('stock_quantity') - Decimal(str(quantity))
-        )
 
 
 @transaction.atomic

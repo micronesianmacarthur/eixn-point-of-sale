@@ -13,7 +13,7 @@ ACTIVE_STATUSES = [s for s in Transaction.Status.values if s != Transaction.Stat
 
 
 class Command(BaseCommand):
-    help = 'Recalculate cached_balance from STORE_CREDIT payment legs only (fix for credit balance bug)'
+    help = 'Recalculate cached_balance from ACCOUNT payment legs only (fix for credit balance bug)'
 
     def add_arguments(self, parser):
         parser.add_argument('--fix', action='store_true', help='Apply corrections to cached_balance')
@@ -24,7 +24,7 @@ class Command(BaseCommand):
         corrected = unchanged = 0
 
         for customer in customers:
-            # Sum the STORE_CREDIT payment legs, signed by transaction
+            # Sum the ACCOUNT payment legs, signed by transaction
             # direction: credit sales grow the tab, refunds paid onto the tab
             # shrink it. Sums the whole transaction total instead, this cannot
             # account for a sale split cash + credit.
@@ -32,7 +32,7 @@ class Command(BaseCommand):
                 Payment.objects.filter(
                     transaction__customer=customer,
                     transaction__status__in=ACTIVE_STATUSES,
-                    payment_type=Payment.PaymentType.STORE_CREDIT,
+                    payment_type=Payment.PaymentType.ACCOUNT,
                 )
                 .annotate(
                     signed=Case(

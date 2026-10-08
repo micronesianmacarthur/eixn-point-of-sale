@@ -3,8 +3,8 @@
 build:  ## Bootstrap: start PostgreSQL, migrate, seed admin user
 	bash scripts/setup-dev.sh
 
-dev:    ## Run Django dev server with Tailwind CSS watch (hot reload)
-	./scripts/dev.sh
+dev:    ## Run the Django dev server
+	cd backend && .venv/bin/python3 manage.py runserver
 
 stop:   ## Stop the dev PostgreSQL container
 	docker stop eixn-pos-db 2>/dev/null || true

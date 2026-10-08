@@ -15,7 +15,7 @@ Thermal/text receipt printed async: `async_task('core.tasks.print_receipt', txn.
 ## Locations
 
 - **Models** — `models.py`: `Session`, `Transaction`, `TransactionLineItem`, `Payment`
-  (`PaymentType`: CASH/Card/STORE_CREDIT=**Account**/OWNER_DRAW). Money is `Decimal` everywhere.
+  (`PaymentType`: CASH/Card/ACCOUNT/OWNER_DRAW, stored value `ACCOUNT`). Money is `Decimal` everywhere.
 - **Business logic** — `services.py`: `process_checkout`, `void_transaction`, `process_return`,
   `close_session`, `process_customer_payment`, `receive_inventory`, `batch_offline_recovery`,
   `normalize_payments`, `to_cents`.
@@ -37,9 +37,8 @@ Thermal/text receipt printed async: `async_task('core.tasks.print_receipt', txn.
 
 ## Invariants
 
-- The POS display term for `STORE_CREDIT` is **"Account"** everywhere (model label, checkout
-  `paymentLabel()`, receipt legs). `"Store Credit"` in `session_close.html` / `offline_recovery.html`
-  / `zreport_content.html` are stale leftovers.
+- The POS display term for the `ACCOUNT` payment type (store credit) is **"Account"** everywhere
+  (model label, checkout `paymentLabel()`, session close, offline recovery, receipt legs).
 - Receipt legs show only the tender types used in the sale.
 - No-floats money: quantize to 0.01 with `ROUND_HALF_UP`.
 - Print verification uses headless Chromium, never WeasyPrint (drops Tailwind v4 `@layer` rules).

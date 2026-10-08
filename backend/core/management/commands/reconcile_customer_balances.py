@@ -22,7 +22,7 @@ class Command(BaseCommand):
         reconciled = errors = 0
 
         for customer in customers:
-            # Expected balance is the store credit actually tendered, signed by
+            # Expected balance is the account credit actually tendered, signed by
             # the transaction's direction: a credit sale adds its credit leg to
             # the tab, a refund paid back onto the tab subtracts it. Summing
             # whole transaction totals (the pre-split approach) cannot express a
@@ -31,7 +31,7 @@ class Command(BaseCommand):
                 Payment.objects.filter(
                     transaction__customer=customer,
                     transaction__status__in=ACTIVE_STATUSES,
-                    payment_type=Payment.PaymentType.STORE_CREDIT,
+                    payment_type=Payment.PaymentType.ACCOUNT,
                 )
                 .select_related('transaction')
                 .annotate(

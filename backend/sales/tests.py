@@ -55,7 +55,7 @@ class CheckoutBase(TestCase):
         return {'payment_type': Payment.PaymentType.CARD, 'amount': amount}
 
     def credit(self, amount):
-        return {'payment_type': Payment.PaymentType.STORE_CREDIT, 'amount': amount}
+        return {'payment_type': Payment.PaymentType.ACCOUNT, 'amount': amount}
 
 
 class SinglePaymentTests(CheckoutBase):
@@ -204,7 +204,7 @@ class StoreCreditTests(CheckoutBase):
 
         txn.refresh_from_db()
         self.assertEqual(txn.payment_amount_for(Payment.PaymentType.CASH), Decimal('6.00'))
-        self.assertEqual(txn.payment_amount_for(Payment.PaymentType.STORE_CREDIT), Decimal('4.00'))
+        self.assertEqual(txn.payment_amount_for(Payment.PaymentType.ACCOUNT), Decimal('4.00'))
 
     def test_credit_limit_is_checked_against_the_credit_leg_only(self):
         customer = Customer.objects.create(
@@ -226,7 +226,7 @@ class StoreCreditTests(CheckoutBase):
         customer = Customer.objects.create(
             name='Tiny Limit', credit_limit=Decimal('3.00'), cached_balance=Decimal('0.00'),
         )
-        with self.assertRaisesMessage(ValueError, 'Store credit denied'):
+        with self.assertRaisesMessage(ValueError, 'Account payment denied'):
             self.checkout(
                 payments=[self.cash('6.00'), self.credit('4.00')],
                 customer=customer,
@@ -330,14 +330,14 @@ class ReturnTests(CheckoutBase):
                 'price_charged': Decimal('10.00'), 'cost_price': Decimal('4.00'),
             }],
             refund_amount=Decimal('10.00'),
-            refund_type=Payment.PaymentType.STORE_CREDIT,
+            refund_type=Payment.PaymentType.ACCOUNT,
             operator_user=self.admin,
         )
 
         self.customer.refresh_from_db()
         self.assertEqual(self.customer.cached_balance, Decimal('-6.00'))
 
-    def test_refund_without_customer_rejects_store_credit(self):
+    def test_refund_without_customer_rejects_account(self):
         txn = self.checkout(payments=[self.cash('10.00')])
         self._post_session()
 
@@ -349,7 +349,7 @@ class ReturnTests(CheckoutBase):
                     'price_charged': Decimal('10.00'), 'cost_price': Decimal('4.00'),
                 }],
                 refund_amount=Decimal('10.00'),
-                refund_type=Payment.PaymentType.STORE_CREDIT,
+                refund_type=Payment.PaymentType.ACCOUNT,
                 operator_user=self.admin,
             )
 
@@ -364,7 +364,7 @@ class CloseSessionCashTests(CheckoutBase):
         )
         self.assertEqual(result['expected_cash'], Decimal('0.00'))
 
-    def test_store_credit_sale_does_not_count_as_cash(self):
+    def test_account_sale_does_not_count_as_cash(self):
         self.checkout(payments=[self.credit('10.00')], customer=self.customer)
 
         result = close_session(
@@ -486,6 +486,18 @@ class ReceiptTests(CheckoutBase):
         self.assertTrue(any(line.startswith('Cash') for line in lines))
         self.assertFalse(any(line.startswith('CHANGE') for line in lines))
 
+    def test_thermal_receipt_includes_receipt_notes(self):
+        from .receipts import build_receipt_lines
+
+        BusinessInfo.objects.create(
+            business_name='Test Shop',
+            receipt_notes='Thanks for shopping with us!',
+        )
+        txn = self.checkout(payments=[self.cash('10.00')])
+        lines = build_receipt_lines(txn)
+
+        self.assertTrue(any('Thanks for shopping with us!' in line for line in lines))
+
 
 class OfflineRecoveryPaymentTests(CheckoutBase):
     def test_recovery_creates_a_single_payment_row(self):
@@ -588,6 +600,38 @@ class SplitCheckoutViewTests(CheckoutBase):
         self.assertContains(response, 'Card')
         self.assertContains(response, 'Cash')
 
+    def test_receipt_template_shows_receipt_notes(self):
+        biz = BusinessInfo.objects.first()
+        biz.receipt_notes = 'Store policies apply.'
+        biz.save(update_fields=['receipt_notes'])
+        txn = self.checkout(payments=[self.cash('10.00')])
+        response = self.client.get(reverse('sales:receipt', kwargs={'pk': txn.pk}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Store policies')
+
+    def test_receipt_template_drops_hardcoded_thank_you_line(self):
+        biz = BusinessInfo.objects.first()
+        biz.receipt_notes = 'Store policies apply.'
+        biz.save(update_fields=['receipt_notes'])
+        txn = self.checkout(payments=[self.cash('10.00')])
+        response = self.client.get(reverse('sales:receipt', kwargs={'pk': txn.pk}))
+
+        self.assertNotContains(response, 'Please keep this receipt')
+
+    def test_thermal_receipt_drops_hardcoded_thank_you_line(self):
+        from .receipts import build_receipt_lines
+
+        biz = BusinessInfo.objects.first()
+        biz.receipt_notes = 'Thanks for shopping with us!'
+        biz.save(update_fields=['receipt_notes'])
+        txn = self.checkout(payments=[self.cash('10.00')])
+        lines = build_receipt_lines(txn)
+
+        self.assertFalse(any('THANK YOU' in line for line in lines))
+        self.assertFalse(any('KEEP THIS RECEIPT' in line for line in lines))
+        self.assertTrue(any('Thanks for shopping with us!' in line for line in lines))
+
     def test_transaction_detail_renders_tender_breakdown(self):
         txn = self.checkout(payments=[self.card('4.00'), self.cash('8.00')])
         response = self.client.get(reverse('sales:transaction_detail', kwargs={'pk': txn.pk}))
@@ -595,13 +639,18 @@ class SplitCheckoutViewTests(CheckoutBase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Card')
         self.assertContains(response, 'Cash')
+        self.assertContains(response, 'Reprint Receipt')
+        self.assertContains(
+            response,
+            f'href="{reverse("sales:receipt", kwargs={"pk": txn.pk})}"',
+        )
 
     def test_customer_detail_renders_tender_breakdown(self):
         txn = self.checkout(payments=[self.credit('6.00'), self.cash('4.00')], customer=self.customer)
         response = self.client.get(reverse('customers:customer_detail', kwargs={'pk': self.customer.pk}))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'Store Credit')
+        self.assertContains(response, 'Account')
         self.assertContains(response, 'Cash')
 
 

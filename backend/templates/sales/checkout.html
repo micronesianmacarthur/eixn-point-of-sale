@@ -151,9 +151,9 @@
                             :class="legs.some(l => l.type === 'CARD') ? 'bg-blue-100 border-blue-300 text-blue-800' : 'bg-white border-gray-300 text-gray-700 hover:border-blue-400'">
                       Card
                     </button>
-                    <button type="button" @click="addLeg('STORE_CREDIT')"
+                    <button type="button" @click="addLeg('ACCOUNT')"
                             class="py-2 text-sm font-medium rounded-lg border transition"
-                            :class="legs.some(l => l.type === 'STORE_CREDIT') ? 'bg-yellow-100 border-yellow-300 text-yellow-800' : 'bg-white border-gray-300 text-gray-700 hover:border-yellow-400'">
+                            :class="legs.some(l => l.type === 'ACCOUNT') ? 'bg-yellow-100 border-yellow-300 text-yellow-800' : 'bg-white border-gray-300 text-gray-700 hover:border-yellow-400'">
                       Account
                     </button>
                   </div>
@@ -195,7 +195,7 @@
                   <select x-model="paymentType" class="w-full bg-white rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                     <option value="CASH">Cash</option>
                     <option value="CARD">Card</option>
-                    <option value="STORE_CREDIT" x-show="customerId !== ''">Account</option>
+                    <option value="ACCOUNT" x-show="customerId !== ''">Account</option>
                   </select>
                 </div>
 

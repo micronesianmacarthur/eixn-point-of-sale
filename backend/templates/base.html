@@ -269,7 +269,7 @@
                     this.$watch('customerId', () => {
                         // Dropping the customer invalidates any credit leg.
                         if (!this.customerId) {
-                            this.legs = this.legs.filter(l => l.type !== 'STORE_CREDIT');
+                            this.legs = this.legs.filter(l => l.type !== 'ACCOUNT');
                         }
                         this.creditError = '';
                     });
@@ -337,7 +337,7 @@
                 },
 
                 paymentLabel(type) {
-                    return { CASH: 'Cash', CARD: 'Card', STORE_CREDIT: 'Account' }[type] || type;
+                    return { CASH: 'Cash', CARD: 'Card', ACCOUNT: 'Account' }[type] || type;
                 },
 
                 legAmount(leg) {
@@ -460,7 +460,7 @@
                         this.tenderError = 'Enter an amount, then tap a payment method.';
                         return;
                     }
-                    if (type === 'STORE_CREDIT') {
+                    if (type === 'ACCOUNT') {
                         const cust = this.customers.find(c => c.id == this.customerId);
                         if (!cust) {
                             this.creditError = 'Select a customer before adding an Account payment.';
@@ -485,7 +485,7 @@
                             ' cannot exceed the balance due. Change can only be given on cash.';
                         return;
                     }
-                    if (type === 'STORE_CREDIT') this.checkCredit();
+                    if (type === 'ACCOUNT') this.checkCredit();
                     // Deliberately no auto-submit here: reaching the full total
                     // is not consent to post the sale. The cashier confirms with
                     // the Complete Sale button.
@@ -496,7 +496,7 @@
                 },
 
                 checkCredit() {
-                    const leg = this.legs.find(l => l.type === 'STORE_CREDIT');
+                    const leg = this.legs.find(l => l.type === 'ACCOUNT');
                     if (!leg) { this.creditError = ''; return; }
                     const cust = this.customers.find(c => c.id == this.customerId);
                     if (!cust) {

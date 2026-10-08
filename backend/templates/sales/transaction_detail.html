@@ -22,10 +22,11 @@
       </button>
     </form>
     {% endif %}
-    {% endif %}
-    <button class="inline-flex items-center px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 shadow-sm rounded-lg transition">
+    <a href="{% url 'sales:receipt' txn.id %}"
+       class="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-brand-600 hover:bg-brand-700 shadow-sm rounded-lg transition">
       <i class="fas fa-print mr-1"></i> Reprint Receipt
-    </button>
+    </a>
+    {% endif %}
   </div>
 </div>
 

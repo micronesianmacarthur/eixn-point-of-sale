@@ -81,7 +81,7 @@ def get_payment_type_breakdown(start_date, end_date):
     )
     result = {item['payment_type']: {'total': item['total'], 'count': item['count']} for item in qs}
     for pt in [Payment.PaymentType.CASH, Payment.PaymentType.CARD,
-               Payment.PaymentType.STORE_CREDIT, Payment.PaymentType.OWNER_DRAW]:
+               Payment.PaymentType.ACCOUNT, Payment.PaymentType.OWNER_DRAW]:
         if pt.value not in result:
             result[pt.value] = {'total': 0, 'count': 0}
     return result

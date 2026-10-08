@@ -16,6 +16,11 @@
         Session
       </button>
       {% endif %}
+      {% if request.user.is_manager %}
+      <button @click="activeTab = 'receipt'" :class="activeTab === 'receipt' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'" class="whitespace-nowrap py-3 px-1 border-b-2 text-sm font-medium transition">
+        Receipt
+      </button>
+      {% endif %}
       <button @click="activeTab = 'customers'" :class="activeTab === 'customers' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'" class="whitespace-nowrap py-3 px-1 border-b-2 text-sm font-medium transition">
         Customers
       </button>
@@ -110,6 +115,27 @@
             <p class="mt-1 text-xs text-red-600">{{ error }}</p>
             {% endfor %}
           </div>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Receipt Tab -->
+    {% if request.user.is_manager %}
+    <div x-show="activeTab === 'receipt'" x-transition>
+      <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <h3 class="text-lg font-semibold text-gray-800 mb-4">
+          <i class="fas fa-receipt mr-1 text-gray-500"></i> Receipt Note
+        </h3>
+        <div>
+          <label for="{{ form.receipt_notes.id_for_label }}" class="block text-sm font-medium text-gray-700 mb-1">{{ form.receipt_notes.label }}</label>
+          {{ form.receipt_notes }}
+          {% if form.receipt_notes.help_text %}
+          <p class="mt-1 text-xs text-gray-500">{{ form.receipt_notes.help_text }}</p>
+          {% endif %}
+          {% for error in form.receipt_notes.errors %}
+          <p class="mt-1 text-xs text-red-600">{{ error }}</p>
+          {% endfor %}
         </div>
       </div>
     </div>

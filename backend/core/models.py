@@ -21,6 +21,7 @@ class BusinessInfo(models.Model):
     contact_email = models.EmailField(blank=True, verbose_name=_('Contact Email'))
     website = models.URLField(blank=True, verbose_name=_('Website'))
     logo = models.ImageField(upload_to='logos/', blank=True, verbose_name=_('Logo'))
+    receipt_notes = models.TextField(blank=True, default='', verbose_name=_('Receipt Note'))
     created_at = models.DateTimeField(auto_now_add=True, verbose_name=_('Created At'))
 
     class Meta:

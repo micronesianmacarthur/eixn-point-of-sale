@@ -233,7 +233,7 @@ Credit limits are checked at checkout (`/sales/checkout/credit-check/`) against 
 
 ### 4.7 Payment types
 
-Fixed at checkout — not configurable: `CASH`, `CARD`, `STORE_CREDIT`, `OWNER_DRAW`.
+Fixed at checkout — not configurable: `CASH`, `CARD`, `ACCOUNT`, `OWNER_DRAW`.
 
 ### 4.8 Hardware and cloud configuration (environment variables)
 

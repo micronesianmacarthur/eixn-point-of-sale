@@ -91,9 +91,10 @@ def build_receipt_lines(txn):
         if change > 0:
             lines.append(f"{'CHANGE':<31}{_fmt_money(change):>9}")
 
-    lines += [
-        "=" * COL_WIDTH,
-        _center("THANK YOU"),
-        _center("PLEASE KEEP THIS RECEIPT"),
-    ]
+    lines.append("=" * COL_WIDTH)
+    if biz and biz.receipt_notes:
+        for ln in biz.receipt_notes.splitlines():
+            stripped = ln.strip()
+            if stripped:
+                lines.append(_center(_truncate(stripped, COL_WIDTH)))
     return lines

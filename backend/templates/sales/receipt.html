@@ -95,7 +95,9 @@
       {% endif %}
     </div>
 
-    <p class="text-center text-sm mt-6">Thank you! Please keep this receipt.</p>
+    {% if business.receipt_notes %}
+    <p class="text-center text-sm mt-6">{{ business.receipt_notes|linebreaksbr }}</p>
+    {% endif %}
   </div>
 
   <div class="no-print mt-6 text-center">

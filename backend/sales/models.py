@@ -78,7 +78,7 @@ class TransactionLineItem(models.Model):
 class Payment(models.Model):
     """One tender against a Transaction.
 
-    A sale may be split across several payments (cash + card + store credit),
+    A sale may be split across several payments (cash + card + account),
     each recorded as its own row. A transaction may hold at most one payment per
     type — the cashier re-tendering the same type merges into the existing row
     rather than adding another.
@@ -87,7 +87,7 @@ class Payment(models.Model):
     class PaymentType(models.TextChoices):
         CASH = 'CASH', 'Cash'
         CARD = 'CARD', 'Card'
-        STORE_CREDIT = 'STORE_CREDIT', 'Store Credit'
+        ACCOUNT = 'ACCOUNT', 'Account'
         OWNER_DRAW = 'OWNER_DRAW', 'Owner Draw'
 
     transaction = models.ForeignKey(Transaction, on_delete=models.CASCADE, related_name='payments')
@@ -107,7 +107,7 @@ class Payment(models.Model):
     PAYMENT_BADGE_CLASSES = {
         PaymentType.CASH: 'bg-green-100 text-green-700',
         PaymentType.CARD: 'bg-blue-100 text-blue-700',
-        PaymentType.STORE_CREDIT: 'bg-yellow-100 text-yellow-700',
+        PaymentType.ACCOUNT: 'bg-yellow-100 text-yellow-700',
         PaymentType.OWNER_DRAW: 'bg-purple-100 text-purple-700',
     }
 
