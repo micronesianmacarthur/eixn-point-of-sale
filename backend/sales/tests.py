@@ -1,13 +1,21 @@
+import gzip
 import json
+import os
 from datetime import timedelta
 from decimal import Decimal
+from html.parser import HTMLParser
+from pathlib import Path
+from unittest.mock import patch
 
-from django.test import TestCase
+from django.conf import settings
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db import connection
+from django.test import TestCase, TransactionTestCase
 from django.urls import reverse
 from django.utils import timezone
 
 from accounting.models import Ledger
-from core.models import BusinessInfo
+from core.models import BusinessInfo, SystemSetting
 from customers.models import Customer
 from inventory.models import Bundle, BundleItem, Category, Product, Vendor
 from users.models import User
@@ -932,3 +940,255 @@ class ArchivedProductSalesTests(CheckoutBase):
         # And it is gone from the screens that would let it be sold again.
         search = self.client.get(reverse('sales:product_search'), {'q': 'Widget'})
         self.assertNotContains(search, self.product.sku)
+
+
+class _FormOwnerParser(HTMLParser):
+    """Work out which <form> a button belongs to, the way a browser parses it.
+
+    HTML does not allow nested forms. The HTML5 parsing algorithm keeps a
+    "form element pointer": a <form> start tag is ignored while another form
+    is open, and the next </form> end tag closes whichever form is open. A
+    browser therefore silently drops a nested form's start tag and leaves its
+    buttons submitting the *outer* form. That is exactly what broke the
+    "Backup Now" button, so the tests parse the served page the same way.
+    """
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.forms = []
+        self._open_form = None
+        self._button_form = None
+        self._button_text = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "form":
+            if self._open_form is None:
+                self._open_form = {"action": dict(attrs).get("action"), "buttons": []}
+                self.forms.append(self._open_form)
+            # A form start tag while a form is open is ignored by the parser.
+        elif tag == "button":
+            self._button_form = self._open_form
+            self._button_text = []
+
+    def handle_endtag(self, tag):
+        if tag == "button":
+            if self._button_form is not None:
+                self._button_form["buttons"].append("".join(self._button_text).strip())
+            self._button_form = None
+        elif tag == "form":
+            self._open_form = None
+
+    def handle_data(self, data):
+        if self._button_form is not None:
+            self._button_text.append(data)
+
+    def form_with_button(self, label):
+        return [f for f in self.forms if label in f["buttons"]]
+
+
+class LocalBackupDownloadViewTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        BusinessInfo.objects.create(business_name='Test Shop')
+        cls.admin = User.objects.create_user(
+            username='admin', password='pass', role=User.Role.ADMIN
+        )
+        cls.manager = User.objects.create_user(
+            username='manager', password='pass', role=User.Role.MANAGER
+        )
+        cls.cashier = User.objects.create_user(
+            username='cashier', password='pass', role=User.Role.CASHIER
+        )
+
+    def setUp(self):
+        # pg_dump must never be pointed at the dev database, only at the
+        # throwaway database Django built for this test run.
+        url = os.environ.get("DATABASE_URL", "")
+        if url.startswith("postgres"):
+            self.test_db_url = f"{url.rsplit('/', 1)[0]}/{connection.settings_dict['NAME']}"
+        else:
+            self.test_db_url = url
+        self._created = []
+
+    def tearDown(self):
+        for path in self._created:
+            Path(path).unlink(missing_ok=True)
+
+    def _backup(self, **extra):
+        with patch.dict(os.environ, {"DATABASE_URL": self.test_db_url}):
+            response = self.client.post(
+                reverse('sales:backup_download'), HTTP_HOST='localhost', **extra
+            )
+        if response.status_code == 200 and response.get("Content-Disposition"):
+            name = response.get("Content-Disposition").split('filename="')[1].rstrip('"')
+            self._created.append(Path(settings.BASE_DIR) / "backups" / name)
+        return response
+
+    def test_backup_download_admin(self):
+        self.client.force_login(self.admin)
+        response = self._backup()
+        self.assertEqual(response.status_code, 200)
+        self.assertRegex(
+            response.get('Content-Disposition'),
+            r'^attachment; filename="eixn_pos_\d{8}_\d{6}\.sql\.gz"$',
+        )
+
+    def test_backup_download_manager(self):
+        self.client.force_login(self.manager)
+        response = self._backup()
+        self.assertEqual(response.status_code, 200)
+
+    def test_backup_download_cashier_403(self):
+        self.client.force_login(self.cashier)
+        response = self.client.post(reverse('sales:backup_download'), HTTP_HOST='localhost')
+        self.assertEqual(response.status_code, 403)
+
+    def test_backup_download_htmx_returns_fragment_with_download_link(self):
+        """The HTMX path swaps in a fragment instead of navigating away."""
+        self.client.force_login(self.manager)
+        response = self._backup(HTTP_HX_REQUEST='true')
+        self.assertEqual(response.status_code, 200)
+        body = response.content.decode()
+        self.assertIn('Backup created', body)
+        self.assertIn(reverse('sales:backup_download_file'), body)
+        # The download is started from the page, not by navigating to it.
+        self.assertIn('<iframe', body)
+
+    def test_backup_download_htmx_reports_failure(self):
+        self.client.force_login(self.manager)
+        with patch.dict(os.environ, {"DATABASE_URL": "sqlite:///not-postgres.db"}):
+            response = self.client.post(
+                reverse('sales:backup_download'),
+                HTTP_HOST='localhost',
+                HTTP_HX_REQUEST='true',
+            )
+        self.assertEqual(response.status_code, 200)
+        body = response.content.decode()
+        self.assertIn('Backup failed', body)
+        self.assertNotIn('<iframe', body)
+
+    def test_backup_file_download_serves_the_file(self):
+        self.client.force_login(self.manager)
+        response = self._backup()
+        name = response.get('Content-Disposition').split('filename="')[1].rstrip('"')
+        response = self.client.get(
+            reverse('sales:backup_download_file'), {'f': name}, HTTP_HOST='localhost'
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get('Content-Disposition'), f'attachment; filename="{name}"')
+        self.assertEqual(b''.join(response.streaming_content)[:2], b'\x1f\x8b')
+
+    def test_backup_file_download_rejects_other_paths(self):
+        self.client.force_login(self.manager)
+        response = self.client.get(
+            reverse('sales:backup_download_file'),
+            {'f': '../../etc/passwd'},
+            HTTP_HOST='localhost',
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_backup_file_download_cashier_403(self):
+        self.client.force_login(self.cashier)
+        response = self.client.get(
+            reverse('sales:backup_download_file'),
+            {'f': 'eixn_pos_20260101_120000.sql.gz'},
+            HTTP_HOST='localhost',
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_backup_now_button_posts_to_the_backup_endpoint(self):
+        """Regression: "Backup Now" must not submit the settings form.
+
+        The backup forms used to be nested inside the settings form. Browsers
+        drop a nested <form> start tag, so the button ended up posting to the
+        settings page and no backup file was ever downloaded.
+        """
+        self.client.force_login(self.manager)
+        response = self.client.get(reverse('settings'), HTTP_HOST='localhost')
+        parser = _FormOwnerParser()
+        parser.feed(response.content.decode())
+        owners = parser.form_with_button('Backup Now')
+        self.assertEqual(len(owners), 1, "Could not find the form owning the 'Backup Now' button")
+        self.assertEqual(owners[0]['action'], reverse('sales:backup_download'))
+
+    def test_restore_button_posts_to_the_restore_endpoint(self):
+        """The restore form must survive the same nested-form parsing rule."""
+        self.client.force_login(self.manager)
+        response = self.client.get(reverse('settings'), HTTP_HOST='localhost')
+        parser = _FormOwnerParser()
+        parser.feed(response.content.decode())
+        owners = parser.form_with_button('Restore Database')
+        self.assertEqual(len(owners), 1, "Could not find the form owning the 'Restore Database' button")
+        self.assertEqual(owners[0]['action'], reverse('sales:backup_restore'))
+
+    def test_settings_form_still_saves_settings(self):
+        """Moving the actions row out of the form must not break saving."""
+        self.client.force_login(self.manager)
+        response = self.client.get(reverse('settings'), HTTP_HOST='localhost')
+        self.assertContains(response, 'id="settings-form"')
+        self.assertContains(response, 'form="settings-form"')
+        response = self.client.post(
+            reverse('settings'),
+            {
+                'default_markup_rate': '0.2',
+                'session_idle_timeout': '5',
+                'default_customer_credit_limit': '50.00',
+                'receipt_notes': 'Thanks!',
+            },
+            HTTP_HOST='localhost',
+        )
+        self.assertRedirects(response, reverse('settings'))
+        self.assertEqual(SystemSetting.objects.get(key='DEFAULT_MARKUP_RATE').value, '0.2')
+
+
+class LocalRestoreUploadViewTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        BusinessInfo.objects.create(business_name='Test Shop')
+        cls.admin = User.objects.create_user(
+            username='admin', password='pass', role=User.Role.ADMIN
+        )
+        cls.manager = User.objects.create_user(
+            username='manager', password='pass', role=User.Role.MANAGER
+        )
+        cls.cashier = User.objects.create_user(
+            username='cashier', password='pass', role=User.Role.CASHIER
+        )
+
+    @patch('django.core.management.call_command')
+    def test_restore_upload_admin_redirects_to_login(self, mock_call_command):
+        mock_call_command.return_value = None
+        self.client.force_login(self.admin)
+        dummy_gz = gzip.compress(b"-- dummy sql dump")
+        uploaded = SimpleUploadedFile(
+            "test.sql.gz", dummy_gz, content_type="application/gzip"
+        )
+        response = self.client.post(
+            reverse('sales:backup_restore'),
+            {'backup_file': uploaded},
+            HTTP_HOST='localhost',
+        )
+        self.assertRedirects(response, reverse('users:login'))
+
+    @patch('django.core.management.call_command')
+    def test_restore_upload_cashier_403(self, mock_call_command):
+        mock_call_command.return_value = None
+        self.client.force_login(self.cashier)
+        dummy_gz = gzip.compress(b"-- dummy sql dump")
+        uploaded = SimpleUploadedFile(
+            "test.sql.gz", dummy_gz, content_type="application/gzip"
+        )
+        response = self.client.post(
+            reverse('sales:backup_restore'),
+            {'backup_file': uploaded},
+            HTTP_HOST='localhost',
+        )
+        self.assertEqual(response.status_code, 403)
+
+    @patch('django.core.management.call_command')
+    def test_restore_upload_no_file(self, mock_call_command):
+        mock_call_command.return_value = None
+        self.client.force_login(self.admin)
+        response = self.client.post(reverse('sales:backup_restore'), {}, HTTP_HOST='localhost')
+        self.assertRedirects(response, reverse('settings'))
+        mock_call_command.assert_not_called()

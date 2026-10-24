@@ -1,0 +1,27 @@
+{% comment %}
+Result of a "Backup Now" run, swapped into the settings page by HTMX.
+
+The hidden iframe is what actually starts the download: it points at the
+backup file endpoint, so the browser saves the file to its downloads folder
+without navigating away from the settings page. The visible link is the
+fallback for browsers that refuse an automatic download.
+{% endcomment %}
+{% if ok %}
+<div class="flex items-start gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800" role="status">
+  <i class="fas fa-check-circle mt-0.5"></i>
+  <div>
+    <p class="font-medium">Backup created &mdash; {{ filename }} ({{ size }})</p>
+    <p class="mt-1 text-xs">The file is being saved to your browser&rsquo;s Downloads folder.</p>
+    <a href="{{ download_url }}" class="mt-2 inline-block text-xs font-medium text-green-700 underline" download>Download again</a>
+  </div>
+</div>
+<iframe src="{{ download_url }}" title="Backup download" class="hidden" aria-hidden="true" tabindex="-1"></iframe>
+{% else %}
+<div class="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800" role="alert">
+  <i class="fas fa-exclamation-triangle mt-0.5"></i>
+  <div>
+    <p class="font-medium">Backup failed</p>
+    <p class="mt-1 text-xs">{{ error }}</p>
+  </div>
+</div>
+{% endif %}

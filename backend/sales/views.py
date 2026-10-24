@@ -1,16 +1,26 @@
 import json
 import os
+import re
+import tempfile
 from datetime import date, datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 
 from decimal import Decimal
 
 from django.conf import settings
 from django.contrib import messages
-from django.contrib.auth.mixins import LoginRequiredMixin
+from django.contrib.auth import logout
+from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.contrib.auth import get_user_model
 from django.db.models import Count, F, Sum, Q
-from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
+from django.http import (
+    FileResponse,
+    Http404,
+    HttpResponse,
+    HttpResponseRedirect,
+    JsonResponse,
+)
 from django.shortcuts import get_object_or_404, render, redirect, reverse
 from django.template.loader import render_to_string
 from django.urls import reverse_lazy
@@ -874,3 +884,131 @@ class BackupTriggerView(LoginRequiredMixin, View):
         status = _read_backup_status()
         html = render_to_string('sales/partials/backup_status.html', {'backup_status': status}, request=request)
         return HttpResponse(html)
+
+
+class ManagerOrAdminMixin(UserPassesTestMixin):
+    """Restrict access to admin or manager users (403 for everyone else)."""
+
+    def test_func(self):
+        user = self.request.user
+        return user.is_authenticated and (user.is_manager or user.is_admin)
+
+
+def _human_size(bytes_):
+    """Render a byte count as a short human-readable size."""
+    for unit in ("B", "KB", "MB", "GB"):
+        if bytes_ < 1024:
+            return f"{bytes_:.1f} {unit}"
+        bytes_ /= 1024
+    return f"{bytes_:.1f} TB"
+
+
+# Only files this pattern may be served by BackupFileDownloadView. It keeps the
+# download endpoint from being turned into an arbitrary-file read of the server.
+BACKUP_FILENAME_RE = re.compile(r"^eixn_pos_\d{8}_\d{6}\.sql\.gz$")
+
+
+def _backup_dir() -> Path:
+    path = Path(settings.BASE_DIR) / "backups"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _backup_file_response(path: Path) -> FileResponse:
+    """Stream a backup file back as a download."""
+    return FileResponse(
+        open(path, "rb"),
+        as_attachment=True,
+        filename=path.name,
+    )
+
+
+class BackupDownloadView(ManagerOrAdminMixin, View):
+    """Trigger a local pg_dump and hand the compressed .sql.gz to the browser.
+
+    The settings page posts here with HTMX, so the reply is a small fragment
+    that confirms the backup and starts the download from the page itself —
+    the manager stays on the settings screen and sees a success or error
+    message. A plain form post (JavaScript unavailable) still gets the file
+    straight back as an attachment, which the browser saves to its downloads
+    folder.
+    """
+
+    def post(self, request):
+        from django.core.management import call_command
+
+        filename = f"eixn_pos_{datetime.now().strftime('%Y%m%d_%H%M%S')}.sql.gz"
+        output_path = _backup_dir() / filename
+        try:
+            call_command("local_backup", output=output_path)
+        except Exception as e:
+            if request.headers.get("HX-Request"):
+                return render(
+                    request,
+                    "sales/partials/backup_download_result.html",
+                    {"ok": False, "error": str(e)},
+                )
+            messages.error(request, f"Local backup failed: {e}")
+            return HttpResponseRedirect(reverse("settings"))
+
+        if request.headers.get("HX-Request"):
+            return render(
+                request,
+                "sales/partials/backup_download_result.html",
+                {
+                    "ok": True,
+                    "filename": filename,
+                    "size": _human_size(output_path.stat().st_size),
+                    "download_url": f"{reverse('sales:backup_download_file')}?f={filename}",
+                },
+            )
+        return _backup_file_response(output_path)
+
+
+class BackupFileDownloadView(ManagerOrAdminMixin, View):
+    """Serve one local backup file as a download.
+
+    The HTMX fragment returned by BackupDownloadView points a hidden iframe
+    here so the browser saves the file without navigating away from the
+    settings page. The file name is validated against BACKUP_FILENAME_RE.
+    """
+
+    def get(self, request):
+        name = request.GET.get("f", "")
+        if not BACKUP_FILENAME_RE.match(name):
+            raise Http404("Unknown backup file.")
+        path = _backup_dir() / name
+        if not path.exists():
+            raise Http404("Backup file not found.")
+        return _backup_file_response(path)
+
+
+class RestoreUploadView(ManagerOrAdminMixin, View):
+    """Upload a .sql.gz backup, restore the full database, then force re-login."""
+
+    def post(self, request):
+        uploaded = request.FILES.get("backup_file")
+        if not uploaded:
+            messages.error(request, "No backup file was provided.")
+            return HttpResponseRedirect(reverse("settings"))
+
+        # Save the upload to a temp file for pg_restore to consume.
+        tmp_path = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".sql.gz", delete=False) as tmp:
+                for chunk in uploaded.chunks():
+                    tmp.write(chunk)
+                tmp_path = tmp.name
+
+            from django.core.management import call_command
+            call_command("local_restore", tmp_path)
+        except Exception as e:
+            messages.error(request, f"Restore failed: {e}")
+            return HttpResponseRedirect(reverse("settings"))
+        finally:
+            if tmp_path:
+                Path(tmp_path).unlink(missing_ok=True)
+
+        # Full DB wipe invalidates existing sessions — force re-login.
+        logout(request)
+        return redirect(settings.LOGIN_URL)

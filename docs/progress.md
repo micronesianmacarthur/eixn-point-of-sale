@@ -4,6 +4,73 @@ A running log of changes made to the project, organized by date.
 
 ---
 
+## 2026-10-22
+
+### "Backup Now" downloaded nothing — nested `<form>` in the settings page
+- **Root cause**: `templates/core/settings.html` wrapped every tab panel in one
+  `<form method="post">`, and the Backup & Restore panel put the backup form
+  *inside* it. HTML does not allow nested forms: the HTML5 parser keeps a
+  "form element pointer", ignores a `<form>` start tag while another form is
+  open, and lets the next `</form>` close the outer one. The browser therefore
+  dropped the backup form's start tag and left the **Backup Now** button
+  submitting the *settings* form. Clicking it posted to `/settings/`, which
+  answered `302 → /settings/` — the page reloaded and no file was produced.
+  The restore form only worked by accident, because the stray `</form>` had
+  already closed the outer form by then
+- Proved with a spec-compliant HTML5 parse of the served page (the button's
+  owning form had `action=None`, i.e. the current URL) and with `curl` against
+  the live server: `POST /settings/` → `302`, `POST /sales/backup/download/`
+  → `200` + `Content-Disposition: attachment` + a valid gzip. The endpoint was
+  never broken; the button never reached it
+- **Fix**: the Backup & Restore panel now sits *outside* the settings form, so
+  its backup and restore forms are top-level forms. The settings form keeps
+  `id="settings-form"` and the Save Settings button re-associates with it
+  through `form="settings-form"`, so saving settings is unchanged
+- **Download flow**: the backup form posts with HTMX. The view runs the dump
+  and swaps in a fragment (`templates/sales/partials/backup_download_result.html`)
+  that reports the file name and size, plus a hidden iframe pointing at the new
+  `GET /sales/backup/download/file/?f=<name>` endpoint — that iframe is what
+  makes the browser save the file to its Downloads folder while the manager
+  stays on the settings page. A visible "Download again" link is the fallback
+  if a browser refuses the automatic download, and a plain (no-JS) form post
+  still gets the attachment straight back
+- `BackupFileDownloadView` only serves names matching
+  `^eixn_pos_\d{8}_\d{6}\.sql\.gz$`, so the endpoint cannot be turned into an
+  arbitrary-file read. Cashiers get 403 on both backup endpoints
+- Backups are now written as `eixn_pos_<YYYYmmdd>_<HHMMSS>.sql.gz` instead of
+  a fixed `eixn_pos_backup.sql.gz`, so repeated backups no longer pile up as
+  `…(1)`, `…(2)` in the Downloads folder
+- `core/management/commands/local_backup.py`: the `last_backup.txt` marker
+  recorded the default timestamped name even when `--output` was used, so the
+  dashboard widget named a file that did not exist — it now records the file
+  that was actually written. Also closed the descriptor `tempfile.mkstemp()`
+  hands back (one leaked fd per backup) and made the temp dump get cleaned up
+  when `pg_dump` fails
+- **Verified in a real browser** (headless Chromium over the DevTools protocol):
+  the DOM puts "Backup Now" in the `/sales/backup/download/` form; clicking it
+  downloaded `eixn_pos_20261022_144427.sql.gz` (27 kB) to disk, the page stayed
+  on `/settings/`, and the success message appeared. The file is a valid
+  gzipped `pg_dump -Fc` archive (287 TOC entries, 37 tables). The Save Settings
+  button still posts `/settings/` and the value round-trips
+- `manage.py check`: clean · `makemigrations --check --dry-run`: clean
+- `manage.py test --noinput sales core customers inventory accounting users`:
+  133 tests, 129 pass; the same 4 pre-existing `users.tests.UserManagementDeleteTests`
+  failures (missing BusinessInfo → 302 to /setup/), untouched
+- `npm run build`: 597 class tokens, `verify-static: OK`
+- pg_dump in the test suite is now pointed at the throwaway `test_eixn_pos`
+  database; before, `sales.tests.LocalBackupDownloadViewTests` dumped the
+  **dev** database because `DATABASE_URL` was not patched
+- Nothing committed
+
+### Local Backup & Restore — final verification
+- `manage.py check`: clean
+- `makemigrations --check --dry-run`: clean — no schema changes, no new migrations
+- `manage.py test --noinput sales core customers inventory accounting users`: 125 tests, 121 pass; 4 failures, all `users.tests.UserManagementDeleteTests` (missing BusinessInfo → 302 to /setup/) — pre-existing baseline, left untouched
+- `core.tests.LocalBackupTests` + `LocalRestoreTests` and the `sales` backup/restore view tests are green (inside the 121): local pg_dump/pg_restore exercised only against the throwaway `test_eixn_pos` DB; the dev DB at localhost:5433 was never targeted by pg_restore or migrate
+- `npm run build`: skipped — no template CSS classes were added or changed for this feature
+- Cloud backup dashboard widget and `BackupTriggerView` untouched
+- Nothing committed
+
 ## 2026-10-08
 
 ### `deduct_composite()` — sales must not touch related stock
